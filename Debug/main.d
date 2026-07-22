@@ -84,7 +84,11 @@ main.o: ../main.c \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h \
- E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/motor.h
+ E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/grayscale_sensor.h \
+ E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/line_tracking.h \
+ E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/motor.h \
+ E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/encoder.h \
+ E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/oled.h
 ti_msp_dl_config.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/devices/msp/msp.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/devices/DeviceFamily.h:
@@ -168,4 +172,8 @@ C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_vref.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h:
+E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/grayscale_sensor.h:
+E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/line_tracking.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/motor.h:
+E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/encoder.h:
+E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/oled.h:

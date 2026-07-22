@@ -131,18 +131,18 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 
 
 /* Defines for OLED */
-#define OLED_INST                                                           I2C1
-#define OLED_INST_IRQHandler                                     I2C1_IRQHandler
-#define OLED_INST_INT_IRQN                                         I2C1_INT_IRQn
+#define OLED_INST                                                           I2C0
+#define OLED_INST_IRQHandler                                     I2C0_IRQHandler
+#define OLED_INST_INT_IRQN                                         I2C0_INT_IRQn
 #define OLED_BUS_SPEED_HZ                                                 100000
-#define GPIO_OLED_SDA_PORT                                                 GPIOB
-#define GPIO_OLED_SDA_PIN                                          DL_GPIO_PIN_3
-#define GPIO_OLED_IOMUX_SDA                                      (IOMUX_PINCM16)
-#define GPIO_OLED_IOMUX_SDA_FUNC                       IOMUX_PINCM16_PF_I2C1_SDA
-#define GPIO_OLED_SCL_PORT                                                 GPIOB
-#define GPIO_OLED_SCL_PIN                                          DL_GPIO_PIN_2
-#define GPIO_OLED_IOMUX_SCL                                      (IOMUX_PINCM15)
-#define GPIO_OLED_IOMUX_SCL_FUNC                       IOMUX_PINCM15_PF_I2C1_SCL
+#define GPIO_OLED_SDA_PORT                                                 GPIOA
+#define GPIO_OLED_SDA_PIN                                          DL_GPIO_PIN_0
+#define GPIO_OLED_IOMUX_SDA                                       (IOMUX_PINCM1)
+#define GPIO_OLED_IOMUX_SDA_FUNC                        IOMUX_PINCM1_PF_I2C0_SDA
+#define GPIO_OLED_SCL_PORT                                                 GPIOA
+#define GPIO_OLED_SCL_PIN                                          DL_GPIO_PIN_1
+#define GPIO_OLED_IOMUX_SCL                                       (IOMUX_PINCM2)
+#define GPIO_OLED_IOMUX_SCL_FUNC                        IOMUX_PINCM2_PF_I2C0_SCL
 
 
 /* Defines for PRINT */
@@ -171,6 +171,12 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 
 
 
+/* Port definition for Pin Group LED */
+#define LED_PORT                                                         (GPIOB)
+
+/* Defines for B22: GPIOB.22 with pinCMx 50 on package pin 21 */
+#define LED_B22_PIN                                             (DL_GPIO_PIN_22)
+#define LED_B22_IOMUX                                            (IOMUX_PINCM50)
 /* Port definition for Pin Group GRAYSCALE */
 #define GRAYSCALE_PORT                                                   (GPIOA)
 
@@ -190,9 +196,10 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define KEY_PORT                                                         (GPIOB)
 
 /* Defines for KEY9: GPIOB.6 with pinCMx 23 on package pin 58 */
-// pins affected by this interrupt request:["KEY9","KEY10"]
-#define KEY_INT_IRQN                                            (GPIOB_INT_IRQn)
-#define KEY_INT_IIDX                            (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
+// groups represented: ["ENCODER","KEY"]
+// pins affected: ["RIGHT_PULSE","KEY9","KEY10"]
+#define GPIO_MULTIPLE_GPIOB_INT_IRQN                            (GPIOB_INT_IRQn)
+#define GPIO_MULTIPLE_GPIOB_INT_IIDX            (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
 #define KEY_KEY9_IIDX                                        (DL_GPIO_IIDX_DIO6)
 #define KEY_KEY9_PIN                                             (DL_GPIO_PIN_6)
 #define KEY_KEY9_IOMUX                                           (IOMUX_PINCM23)
@@ -220,6 +227,19 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define DC_MOTOR_BIN2_PORT                                               (GPIOB)
 #define DC_MOTOR_BIN2_PIN                                       (DL_GPIO_PIN_18)
 #define DC_MOTOR_BIN2_IOMUX                                      (IOMUX_PINCM44)
+/* Defines for LEFT_PULSE: GPIOA.22 with pinCMx 47 on package pin 18 */
+#define ENCODER_LEFT_PULSE_PORT                                          (GPIOA)
+// pins affected by this interrupt request:["LEFT_PULSE"]
+#define ENCODER_GPIOA_INT_IRQN                                  (GPIOA_INT_IRQn)
+#define ENCODER_GPIOA_INT_IIDX                  (DL_INTERRUPT_GROUP1_IIDX_GPIOA)
+#define ENCODER_LEFT_PULSE_IIDX                             (DL_GPIO_IIDX_DIO22)
+#define ENCODER_LEFT_PULSE_PIN                                  (DL_GPIO_PIN_22)
+#define ENCODER_LEFT_PULSE_IOMUX                                 (IOMUX_PINCM47)
+/* Defines for RIGHT_PULSE: GPIOB.9 with pinCMx 26 on package pin 61 */
+#define ENCODER_RIGHT_PULSE_PORT                                         (GPIOB)
+#define ENCODER_RIGHT_PULSE_IIDX                             (DL_GPIO_IIDX_DIO9)
+#define ENCODER_RIGHT_PULSE_PIN                                  (DL_GPIO_PIN_9)
+#define ENCODER_RIGHT_PULSE_IOMUX                                (IOMUX_PINCM26)
 
 
 /* clang-format on */

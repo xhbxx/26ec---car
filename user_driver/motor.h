@@ -15,6 +15,13 @@
 #define MOTOR_DIRECTION_FORWARD    (1U)
 #define MOTOR_DIRECTION_REVERSE    (2U)
 
+/* 100% 目标速度对应的每 50 ms 脉冲数，需按实际编码器脉冲数调整。 */
+#define MOTOR_ENCODER_PULSES_AT_100 (20)
+#define MOTOR_PID_KP                (12)
+#define MOTOR_PID_KI                (2)
+#define MOTOR_PID_KD                (1)
+#define MOTOR_PID_INTEGRAL_LIMIT    (200)
+
 void motor_init(uint8_t motor_id);
 void motor_set_duty(uint8_t motor_id, uint32_t duty);
 void motor_set_direction(uint8_t motor_id, uint8_t direction);

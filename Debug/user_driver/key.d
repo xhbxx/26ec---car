@@ -83,7 +83,8 @@ user_driver/key.o: ../user_driver/key.c ../user_driver/key.h \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_vref.h \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h \
- C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h
+ C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h \
+ ../user_driver/encoder.h
 ../user_driver/key.h:
 ti_msp_dl_config.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/devices/msp/msp.h:
@@ -168,3 +169,4 @@ C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_vref.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h:
+../user_driver/encoder.h:

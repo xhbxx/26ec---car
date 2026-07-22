@@ -5,6 +5,11 @@
 u8 OLED_GRAM[144][8];
 extern void delay_ms(uint32_t ms);
 
+#define OLED_I2C_TIMEOUT_LOOPS (100000U)
+
+/* OLED 通信失败后停止继续发送，避免反复超时拖慢主循环。 */
+static uint8_t g_oled_i2c_failed = 0U;
+
 //反显函数
 void OLED_ColorTurn(u8 i)
 {
@@ -30,25 +35,68 @@ void OLED_DisplayTurn(u8 i)
 void OLED_WR_Byte(uint8_t dat, uint8_t mode)
 {
     uint8_t txData[2];
-    
-    // 控制字节: 0x00为命令, 0x40为数据
-    txData[0] = mode ? 0x40 : 0x00; 
+    uint32_t timeout;
+    uint32_t status;
+
+    if (g_oled_i2c_failed != 0U) {
+        return;
+    }
+
+    /* 控制字节：0x00 表示命令，0x40 表示显示数据。 */
+    txData[0] = mode ? 0x40 : 0x00;
     txData[1] = dat;
 
-    // 1. 等待 I2C 彻底空闲
-    while (!(DL_I2C_getControllerStatus(OLED_INST) & DL_I2C_CONTROLLER_STATUS_IDLE));
-    
-    // 2. 将 2 个字节填入发送 FIFO
+    /* 发送前等待控制器空闲，但不能无限等待。 */
+    timeout = OLED_I2C_TIMEOUT_LOOPS;
+    while ((DL_I2C_getControllerStatus(OLED_INST) &
+            DL_I2C_CONTROLLER_STATUS_IDLE) == 0U) {
+        if (--timeout == 0U) {
+            DL_I2C_resetControllerTransfer(OLED_INST);
+            DL_I2C_flushControllerTXFIFO(OLED_INST);
+            g_oled_i2c_failed = 1U;
+            return;
+        }
+    }
+
     DL_I2C_fillControllerTXFIFO(OLED_INST, txData, 2);
-    
-    // 3. 启动传输
-    DL_I2C_startControllerTransfer(OLED_INST, 0x3C, DL_I2C_CONTROLLER_DIRECTION_TX, 2);
-    
-    // 4. 等待总线变为 BUSY 状态 (确保硬件状态机已经启动，比 delay 更可靠)
-    while (!(DL_I2C_getControllerStatus(OLED_INST) & DL_I2C_CONTROLLER_STATUS_BUSY_BUS));
-    
-    // 5. 再次等待 I2C 回到空闲状态 (代表本次传输真正完成)
-    while (!(DL_I2C_getControllerStatus(OLED_INST) & DL_I2C_CONTROLLER_STATUS_IDLE));
+    DL_I2C_startControllerTransfer(
+        OLED_INST, 0x3CU, DL_I2C_CONTROLLER_DIRECTION_TX, 2U);
+
+    /* TI I2C_ERR_13：启动传输后至少等待 3 个 I2C 功能时钟周期。 */
+    delay_cycles(8U);
+
+    /* BUSY 为 1 表示传输尚未完成；原代码等待 BUSY_BUS 变为 1，可能永久卡死。 */
+    timeout = OLED_I2C_TIMEOUT_LOOPS;
+    do {
+        status = DL_I2C_getControllerStatus(OLED_INST);
+        if ((status & DL_I2C_CONTROLLER_STATUS_ERROR) != 0U) {
+            break;
+        }
+        if (--timeout == 0U) {
+            break;
+        }
+    } while ((status & DL_I2C_CONTROLLER_STATUS_BUSY) != 0U);
+
+    status = DL_I2C_getControllerStatus(OLED_INST);
+    if ((timeout == 0U) ||
+        ((status & DL_I2C_CONTROLLER_STATUS_ERROR) != 0U)) {
+        DL_I2C_resetControllerTransfer(OLED_INST);
+        DL_I2C_flushControllerTXFIFO(OLED_INST);
+        g_oled_i2c_failed = 1U;
+        return;
+    }
+
+    /* 等待 STOP 完成并恢复空闲。 */
+    timeout = OLED_I2C_TIMEOUT_LOOPS;
+    while ((DL_I2C_getControllerStatus(OLED_INST) &
+            DL_I2C_CONTROLLER_STATUS_IDLE) == 0U) {
+        if (--timeout == 0U) {
+            DL_I2C_resetControllerTransfer(OLED_INST);
+            DL_I2C_flushControllerTXFIFO(OLED_INST);
+            g_oled_i2c_failed = 1U;
+            return;
+        }
+    }
 }
 
 //开启OLED显示 
