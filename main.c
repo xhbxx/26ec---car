@@ -7,39 +7,46 @@
 #include "oled.h"
 #include "key.h"
 
-/* Display a signed target speed percentage on one OLED row. */
-static void OLED_ShowSignedPercent(uint8_t x, uint8_t y, int16_t value)
+/* Display a signed speed value on one OLED row. */
+static void OLED_ShowSignedPercent(uint8_t x, uint8_t y, int32_t value)
 {
-    uint16_t magnitude;
+    uint32_t magnitude;
 
     OLED_ShowString(x, y, (u8 *)(value < 0 ? "-" : "+"), 16U);
-    magnitude = (uint16_t)(value < 0 ? -value : value);
-    OLED_ShowNum((uint8_t)(x + 16U), y, magnitude, 3U, 16U);
+    magnitude = (uint32_t)(value < 0 ? -value : value);
+    if (magnitude > 999U) {
+        magnitude = 999U;
+    }
+    OLED_ShowNum((uint8_t)(x + 16U), y, (u32)magnitude, 3U, 16U);
 }
 
-/* Show target percentage and measured encoder pulses from the latest 50 ms period. */
-static void OLED_ShowMotorSpeed(uint8_t y, uint8_t motor_id)
+/* Show target and measured wheel speed in the same unit: percent. */
+static void OLED_ShowMotorPercent(uint8_t y, uint8_t motor_id)
 {
-    /* Motor IDs are 1/2, while encoder array indexes are 0/1. */
-    int32_t pulses = Encoder_Get_Last_Count(
-        (uint8_t)(motor_id - MOTOR_ID_A));
+    int32_t actual_speed = motor_get_actual_speed_percent(motor_id);
 
     OLED_ShowString(0U, y, (u8 *)"T:", 16U);
-    OLED_ShowSignedPercent(16U, y, motor_get_target_percent(motor_id));
-    OLED_ShowString(64U, y, (u8 *)"P:", 16U);
-    if (pulses < 0) {
-        pulses = 0;
+    OLED_ShowSignedPercent(16U, y,
+        motor_get_target_speed_percent(motor_id));
+    OLED_ShowString(64U, y, (u8 *)"S:", 16U);
+    if (actual_speed < 0) {
+        actual_speed = -actual_speed;
     }
-    OLED_ShowNum(80U, y, (u32)pulses, 3U, 16U);
+    if (actual_speed > 999) {
+        actual_speed = 999;
+    }
+    OLED_ShowNum(80U, y, (u32)actual_speed, 3U, 16U);
 }
 
-/* Show the runtime PID gains changed by the four tuning keys. */
+/* Show P/I/D; all three values use 100x fixed-point scaling. */
 static void OLED_ShowPidGains(void)
 {
-    OLED_ShowString(0U, 32U, (u8 *)"P:", 16U);
-    OLED_ShowNum(16U, 32U, (u32)motor_get_pid_kp(), 3U, 16U);
-    OLED_ShowString(48U, 32U, (u8 *)" I:", 16U);
-    OLED_ShowNum(72U, 32U, (u32)motor_get_pid_ki(), 3U, 16U);
+    OLED_ShowString(0U, 32U, (u8 *)"P:", 8U);
+    OLED_ShowNum(8U, 32U, (u32)motor_get_pid_kp(), 3U, 8U);
+    OLED_ShowString(28U, 32U, (u8 *)"I:", 8U);
+    OLED_ShowNum(36U, 32U, (u32)motor_get_pid_ki(), 3U, 8U);
+    OLED_ShowString(56U, 32U, (u8 *)"D:", 8U);
+    OLED_ShowNum(64U, 32U, (u32)motor_get_pid_kd(), 3U, 8U);
 }
 
 /**
@@ -60,8 +67,8 @@ int main(void)
     /* 先点亮 OLED，再启动电机和中断，便于独立判断屏幕是否正常。 */
     OLED_Init();
     DL_GPIO_setPins(LED_PORT, LED_B22_PIN);
-    OLED_ShowMotorSpeed(0U, MOTOR_ID_A);
-    OLED_ShowMotorSpeed(16U, MOTOR_ID_B);
+    OLED_ShowMotorPercent(0U, MOTOR_ID_A);
+    OLED_ShowMotorPercent(16U, MOTOR_ID_B);
     /* 下两行按 0~7 顺序显示检测状态：1=黑线，0=未检测到。 */
     OLED_ShowPidGains();
     OLED_ShowString(0U, 48U, sensor_text, 16U);
@@ -87,8 +94,8 @@ int main(void)
         /* oled.c 刷新整屏较慢，每约 500 ms 更新一次，避免拖慢循迹。 */
         oled_update_count++;
         if (oled_update_count >= 100U) {
-            OLED_ShowMotorSpeed(0U, MOTOR_ID_A);
-            OLED_ShowMotorSpeed(16U, MOTOR_ID_B);
+            OLED_ShowMotorPercent(0U, MOTOR_ID_A);
+            OLED_ShowMotorPercent(16U, MOTOR_ID_B);
             OLED_ShowPidGains();
             for (sensor_channel = 0U;
                  sensor_channel < GRAYSCALE_SENSOR_CHANNELS;
