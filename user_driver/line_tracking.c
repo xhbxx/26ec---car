@@ -1,159 +1,135 @@
 #include "line_tracking.h"
 
+#include "grayscale_sensor.h"
 #include "motor.h"
 
-typedef enum {
-    TRACK_STATE_FOLLOW = 0,
-    TRACK_STATE_CORNER_ADVANCE,
-    TRACK_STATE_CORNER_TURN
-} TrackState;
+static int16_t g_last_correction_sign = 1;
+
+/** 限制目标速度后立即更新左右电机，不进行渐变等待。 */
+static void tracking_apply_motor_targets(
+    int16_t left_target, int16_t right_target)
+{
+    if (left_target > 100) {
+        left_target = 100;
+    } else if (left_target < -100) {
+        left_target = -100;
+    }
+    if (right_target > 100) {
+        right_target = 100;
+    } else if (right_target < -100) {
+        right_target = -100;
+    }
+
+    motor_drive_percent(MOTOR_ID_A,
+        left_target * LEFT_MOTOR_FORWARD_SIGN);
+    motor_drive_percent(MOTOR_ID_B,
+        right_target * RIGHT_MOTOR_FORWARD_SIGN);
+}
 
 /**
- * 在方框黑线上完成正常差速循迹和固定方向的 90 度转弯。
- * 函数采用非阻塞状态机，每次主循环只更新一次动作，不使用延时等待。
+ * 根据八路数字灰度值更新左右轮目标速度。
+ * 当前模块检测到黑线为 1，速度根据本次检测结果直接跳变。
  */
-void Line_Tracking_Update(const uint16_t sensor_values[8])
+void Line_Tracking_Update(const uint16_t sensor_values[GRAYSCALE_SENSOR_CHANNELS])
 {
-    static const int8_t weights[8] = {-35, -25, -15, -5, 5, 15, 25, 35};
-    static TrackState state = TRACK_STATE_FOLLOW;
-    static uint8_t state_updates = 0U;
-    static uint8_t center_updates = 0U;
-    static uint8_t lost_updates = 0U;
-    uint8_t active[8];
+    uint8_t raw_one_count = 0U;
+    uint8_t active_level;
     uint8_t active_count = 0U;
-    int16_t weighted_sum = 0;
+    uint8_t active_mask = 0U;
     uint8_t channel;
-    uint8_t corner_detected;
+    int32_t position_sum = 0;
+    int32_t position_x100;
+    int32_t error_x100;
+    int32_t abs_error_x100;
+    int16_t base_percent;
+    int16_t correction_percent;
+    int16_t left_target;
+    int16_t right_target;
 
     if (sensor_values == 0) {
         return;
     }
 
-    for (channel = 0U; channel < 8U; channel++) {
-        active[channel] =
-            (sensor_values[channel] == LINE_ACTIVE_LEVEL) ? 1U : 0U;
-        if (active[channel] != 0U) {
+    for (channel = 0U; channel < GRAYSCALE_SENSOR_CHANNELS; channel++) {
+        if (sensor_values[channel] != 0U) {
+            raw_one_count++;
+        }
+    }
+
+    /* 没有任何一路检测到黑线时，按上一次方向直接搜索黑线。 */
+    if (raw_one_count == 0U) {
+        if (g_last_correction_sign > 0) {
+            tracking_apply_motor_targets(
+                TRACK_LOST_RIGHT_PERCENT, -TRACK_LOST_LEFT_PERCENT);
+        } else {
+            tracking_apply_motor_targets(
+                -TRACK_LOST_LEFT_PERCENT, TRACK_LOST_RIGHT_PERCENT);
+        }
+        return;
+    }
+
+#if TRACK_AUTO_ACTIVE_LEVEL
+    if (raw_one_count < (GRAYSCALE_SENSOR_CHANNELS / 2U)) {
+        active_level = 1U;
+    } else if (raw_one_count > (GRAYSCALE_SENSOR_CHANNELS / 2U)) {
+        active_level = 0U;
+    } else {
+        active_level = LINE_ACTIVE_LEVEL;
+    }
+#else
+    active_level = LINE_ACTIVE_LEVEL;
+#endif
+
+    for (channel = 0U; channel < GRAYSCALE_SENSOR_CHANNELS; channel++) {
+        if (sensor_values[channel] == active_level) {
+            position_sum += (int32_t)(channel + 1U);
             active_count++;
-            weighted_sum += weights[channel];
+            active_mask |= (uint8_t)(1U << channel);
         }
     }
 
     if (active_count == 0U) {
-        if (lost_updates < TRACK_LOST_CONFIRM_UPDATES) {
-            lost_updates++;
-        }
-    } else {
-        lost_updates = 0U;
-    }
-
-    /*
-     * 直角拐点通常表现为多路同时压线，或方框转向一侧的最外探头压线。
-     * 方框四个角使用同一转向方向，避免在宽黑线处无法判断左右。
-     */
-    corner_detected = (active_count >= TRACK_CORNER_MIN_ACTIVE) ? 1U : 0U;
-    if (TRACK_SQUARE_TURN_DIRECTION > 0) {
-        if (((active[6] != 0U) || (active[7] != 0U)) &&
-            (active_count >= 2U)) {
-            corner_detected = 1U;
-        }
-    } else {
-        if (((active[0] != 0U) || (active[1] != 0U)) &&
-            (active_count >= 2U)) {
-            corner_detected = 1U;
-        }
-    }
-
-    if (state == TRACK_STATE_FOLLOW) {
-        int16_t error;
-        int16_t correction;
-        int16_t left_speed;
-        int16_t right_speed;
-
-        if (corner_detected != 0U) {
-            /* 先向前越过方框拐点，使车体旋转中心接近直角顶点。 */
-            state = TRACK_STATE_CORNER_ADVANCE;
-            state_updates = 0U;
-            motor_drive_percent(MOTOR_ID_A,
-                TRACK_BASE_SPEED_PERCENT * LEFT_MOTOR_FORWARD_SIGN);
-            motor_drive_percent(MOTOR_ID_B,
-                TRACK_BASE_SPEED_PERCENT * RIGHT_MOTOR_FORWARD_SIGN);
-            return;
-        }
-
-        if (lost_updates >= TRACK_LOST_CONFIRM_UPDATES) {
-            /* 已越过尖角且前方无黑线时，直接开始方框固定方向转弯。 */
-            state = TRACK_STATE_CORNER_TURN;
-            state_updates = 0U;
-            center_updates = 0U;
-            return;
-        }
-
-        if (active_count == 0U) {
-            /* 单帧丢线先保持直行，过滤灰度模块瞬时抖动。 */
-            motor_drive_percent(MOTOR_ID_A,
-                TRACK_BASE_SPEED_PERCENT * LEFT_MOTOR_FORWARD_SIGN);
-            motor_drive_percent(MOTOR_ID_B,
-                TRACK_BASE_SPEED_PERCENT * RIGHT_MOTOR_FORWARD_SIGN);
-            return;
-        }
-
-        error = (int16_t)(weighted_sum / (int16_t)active_count);
-        correction = (int16_t)((error * 3) / 4);
-        if (correction > TRACK_MAX_CORRECTION) {
-            correction = TRACK_MAX_CORRECTION;
-        } else if (correction < -TRACK_MAX_CORRECTION) {
-            correction = -TRACK_MAX_CORRECTION;
-        }
-
-        left_speed = (int16_t)(TRACK_BASE_SPEED_PERCENT + correction);
-        right_speed = (int16_t)(TRACK_BASE_SPEED_PERCENT - correction);
-        motor_drive_percent(MOTOR_ID_A,
-            (int16_t)(left_speed * LEFT_MOTOR_FORWARD_SIGN));
-        motor_drive_percent(MOTOR_ID_B,
-            (int16_t)(right_speed * RIGHT_MOTOR_FORWARD_SIGN));
         return;
     }
 
-    if (state == TRACK_STATE_CORNER_ADVANCE) {
-        motor_drive_percent(MOTOR_ID_A,
-            TRACK_BASE_SPEED_PERCENT * LEFT_MOTOR_FORWARD_SIGN);
-        motor_drive_percent(MOTOR_ID_B,
-            TRACK_BASE_SPEED_PERCENT * RIGHT_MOTOR_FORWARD_SIGN);
-        state_updates++;
-        if (state_updates >= TRACK_CORNER_ADVANCE_UPDATES) {
-            state = TRACK_STATE_CORNER_TURN;
-            state_updates = 0U;
-            center_updates = 0U;
-        }
+    /* 只有索引 3、4 两个中央探头同时且单独有效，目标差速才为 0。 */
+    if (active_mask == TRACK_CENTER_MASK) {
+        tracking_apply_motor_targets(
+            TRACK_REFERENCE_BASE_PERCENT, TRACK_REFERENCE_BASE_PERCENT);
         return;
     }
 
-    /* 左右轮反向，原地完成接近 90 度的固定方向转弯。 */
-    if (TRACK_SQUARE_TURN_DIRECTION > 0) {
-        motor_drive_percent(MOTOR_ID_A,
-            TRACK_CORNER_TURN_SPEED * LEFT_MOTOR_FORWARD_SIGN);
-        motor_drive_percent(MOTOR_ID_B,
-            -TRACK_CORNER_TURN_SPEED * RIGHT_MOTOR_FORWARD_SIGN);
-    } else {
-        motor_drive_percent(MOTOR_ID_A,
-            -TRACK_CORNER_TURN_SPEED * LEFT_MOTOR_FORWARD_SIGN);
-        motor_drive_percent(MOTOR_ID_B,
-            TRACK_CORNER_TURN_SPEED * RIGHT_MOTOR_FORWARD_SIGN);
-    }
-    state_updates++;
+    /* 位置使用放大 100 倍的定点数：1号为100，中心4.5为450，8号为800。 */
+    position_x100 = (position_sum * 100) / active_count;
+    error_x100 = 450 - position_x100;
+    abs_error_x100 = error_x100 < 0 ? -error_x100 : error_x100;
 
-    /* 离开原来的宽线后，中间两路连续检测到新边才恢复正常循迹。 */
-    if ((state_updates >= TRACK_TURN_MIN_UPDATES) &&
-        ((active[3] != 0U) || (active[4] != 0U)) &&
-        (active_count <= 3U)) {
-        center_updates++;
+    /* 偏离越大，整体前进速度越低；结果直接送入电机，不做渐变。 */
+    base_percent = TRACK_REFERENCE_BASE_PERCENT -
+        (int16_t)((abs_error_x100 * TRACK_SLOWDOWN_PER_SENSOR) / 100);
+    if (base_percent < TRACK_MIN_FORWARD_PERCENT) {
+        base_percent = TRACK_MIN_FORWARD_PERCENT;
+    }
+
+    correction_percent = (int16_t)(
+        (error_x100 * TRACK_MAX_CORRECTION_PERCENT) / 350);
+    if (correction_percent > TRACK_MAX_CORRECTION_PERCENT) {
+        correction_percent = TRACK_MAX_CORRECTION_PERCENT;
+    } else if (correction_percent < -TRACK_MAX_CORRECTION_PERCENT) {
+        correction_percent = -TRACK_MAX_CORRECTION_PERCENT;
+    }
+
+    if (correction_percent > 0) {
+        g_last_correction_sign = 1;
+    } else if (correction_percent < 0) {
+        g_last_correction_sign = -1;
     } else {
-        center_updates = 0U;
+        /* 非中央对称组合平均值可能为中心，仍按最近方向做小幅修正。 */
+        correction_percent =
+            TRACK_CENTER_ESCAPE_PERCENT * g_last_correction_sign;
     }
-    if (center_updates >= TRACK_CENTER_CONFIRM_UPDATES) {
-        state = TRACK_STATE_FOLLOW;
-        state_updates = 0U;
-        center_updates = 0U;
-        lost_updates = 0U;
-    }
+
+    left_target = base_percent + correction_percent;
+    right_target = base_percent - correction_percent;
+    tracking_apply_motor_targets(left_target, right_target);
 }

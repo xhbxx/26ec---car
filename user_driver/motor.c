@@ -113,6 +113,15 @@ void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
 }
 
 /** 停止指定通道并清除该通道 PID 状态。 */
+/* Return the current target percentage for OLED/debug display. */
+int16_t motor_get_target_percent(uint8_t motor_id)
+{
+    if ((motor_id != MOTOR_ID_A) && (motor_id != MOTOR_ID_B)) {
+        return 0;
+    }
+    return motor_target_percent[(uint8_t)(motor_id - MOTOR_ID_A)];
+}
+
 void motor_stop(uint8_t motor_id)
 {
     uint8_t index;

@@ -1,6 +1,7 @@
 #include "key.h"
 
 #include "encoder.h"
+#include "mpu6050.h"
 
 /* 兼容工程中仍保留的按键模块；双路PWM主程序不使用该状态变量。 */
 volatile int status = 0;
@@ -14,25 +15,28 @@ uint8_t get_key_state(uint32_t key)
 /** 共享处理按键和两路编码器中断，左右轮脉冲分别计数。 */
 void GROUP1_IRQHandler(void)
 {
-    switch (DL_GPIO_getPendingInterrupt(GPIOA)) {
-    case ENCODER_LEFT_PULSE_IIDX:
+    const uint32_t interrupt_pins = MPU_INT_INT_PIN |
+        ENCODER_LEFT_PULSE_PIN | ENCODER_RIGHT_PULSE_PIN |
+        KEY_KEY9_PIN | KEY_KEY10_PIN;
+    const uint32_t pending =
+        DL_GPIO_getEnabledInterruptStatus(GPIOB, interrupt_pins);
+
+    /* Test every pending bit so simultaneous GPIOB events are not dropped. */
+    if ((pending & MPU_INT_INT_PIN) != 0U) {
+        MPU6050_OnInterrupt();
+    }
+    if ((pending & ENCODER_LEFT_PULSE_PIN) != 0U) {
         Encoder_Record_Pulse(0U);
-        break;
-    default:
-        break;
+    }
+    if ((pending & ENCODER_RIGHT_PULSE_PIN) != 0U) {
+        Encoder_Record_Pulse(1U);
+    }
+    if ((pending & KEY_KEY9_PIN) != 0U) {
+        status = (status + 1) % 3;
+    }
+    if ((pending & KEY_KEY10_PIN) != 0U) {
+        status = (status + 2) % 3;
     }
 
-    switch (DL_GPIO_getPendingInterrupt(GPIOB)) {
-    case ENCODER_RIGHT_PULSE_IIDX:
-        Encoder_Record_Pulse(1U);
-        break;
-    case KEY_KEY9_IIDX:
-        status = (status + 1) % 3;
-        break;
-    case KEY_KEY10_IIDX:
-        status = (status + 2) % 3;
-        break;
-    default:
-        break;
-    }
+    DL_GPIO_clearInterruptStatus(GPIOB, pending);
 }

@@ -1,14 +1,12 @@
 #include "grayscale_sensor.h"
 
-/** 等待灰度模块通道切换稳定，当前系统时钟下约为指定微秒数。 */
+/** 按当前 80 MHz 系统时钟产生微秒级延时。 */
 static void grayscale_delay_us(uint32_t microseconds)
 {
-    while (microseconds-- > 0U) {
-        DL_Common_delayCycles(CPUCLK_FREQ / 1000000U);
-    }
+    DL_Common_delayCycles((CPUCLK_FREQ / 1000000U) * microseconds);
 }
 
-/** 通过AD0、AD1、AD2选择八路灰度模块的一个输出通道。 */
+/** AD0 为最低位、AD1 为次位、AD2 为最高位，选择 0~7 通道。 */
 static void grayscale_select_channel(uint8_t channel)
 {
     if ((channel & 0x01U) != 0U) {
@@ -30,15 +28,19 @@ static void grayscale_select_channel(uint8_t channel)
     }
 }
 
-/** 初始化灰度通道选择状态；GPIO方向已由SysConfig统一配置。 */
-void Grayscale_Sensor_Init(void)
+/** 直接读取 PA17/OUT；模块检测到黑线时返回 1。 */
+static uint16_t grayscale_read_out(void)
 {
-    DL_GPIO_clearPins(GRAYSCALE_PORT,
-        GRAYSCALE_AD0_PIN | GRAYSCALE_AD1_PIN | GRAYSCALE_AD2_PIN);
-    grayscale_delay_us(50U);
+    return (DL_GPIO_readPins(GRAYSCALE_PORT, GRAYSCALE_OUT_PIN) != 0U)
+        ? 1U : 0U;
 }
 
-/** 依次读取0～7号传感器，数组下标顺序必须与车头左到右的安装顺序一致。 */
+/** GPIO 方向和初始电平已经由 SysConfig 初始化。 */
+void Grayscale_Sensor_Init(void)
+{
+}
+
+/** 完全沿用 Grayscale_Read 示例：逐路选择，等待 50 us 后读取一次。 */
 void Grayscale_Sensor_Read_All(uint16_t *sensor_values)
 {
     uint8_t channel;
@@ -50,12 +52,11 @@ void Grayscale_Sensor_Read_All(uint16_t *sensor_values)
     for (channel = 0U; channel < GRAYSCALE_SENSOR_CHANNELS; channel++) {
         grayscale_select_channel(channel);
         grayscale_delay_us(50U);
-        sensor_values[channel] =
-            (DL_GPIO_readPins(GRAYSCALE_PORT, GRAYSCALE_OUT_PIN) != 0U) ? 1U : 0U;
+        sensor_values[channel] = grayscale_read_out();
     }
 }
 
-/** 读取指定的一路灰度数字量；通道参数超出0～7时返回0。 */
+/** 读取指定通道；通道号必须为 0~7。 */
 uint16_t Grayscale_Sensor_Read_Single(uint8_t channel)
 {
     if (channel >= GRAYSCALE_SENSOR_CHANNELS) {
@@ -64,5 +65,5 @@ uint16_t Grayscale_Sensor_Read_Single(uint8_t channel)
 
     grayscale_select_channel(channel);
     grayscale_delay_us(50U);
-    return (DL_GPIO_readPins(GRAYSCALE_PORT, GRAYSCALE_OUT_PIN) != 0U) ? 1U : 0U;
+    return grayscale_read_out();
 }

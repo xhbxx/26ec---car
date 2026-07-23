@@ -144,6 +144,20 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define GPIO_OLED_IOMUX_SCL                                       (IOMUX_PINCM2)
 #define GPIO_OLED_IOMUX_SCL_FUNC                        IOMUX_PINCM2_PF_I2C0_SCL
 
+/* Defines for MPU6050 */
+#define MPU6050_INST                                                        I2C1
+#define MPU6050_INST_IRQHandler                                  I2C1_IRQHandler
+#define MPU6050_INST_INT_IRQN                                      I2C1_INT_IRQn
+#define MPU6050_BUS_SPEED_HZ                                              100000
+#define GPIO_MPU6050_SDA_PORT                                              GPIOB
+#define GPIO_MPU6050_SDA_PIN                                       DL_GPIO_PIN_3
+#define GPIO_MPU6050_IOMUX_SDA                                   (IOMUX_PINCM16)
+#define GPIO_MPU6050_IOMUX_SDA_FUNC                    IOMUX_PINCM16_PF_I2C1_SDA
+#define GPIO_MPU6050_SCL_PORT                                              GPIOB
+#define GPIO_MPU6050_SCL_PIN                                       DL_GPIO_PIN_2
+#define GPIO_MPU6050_IOMUX_SCL                                   (IOMUX_PINCM15)
+#define GPIO_MPU6050_IOMUX_SCL_FUNC                    IOMUX_PINCM15_PF_I2C1_SCL
+
 
 /* Defines for PRINT */
 #define PRINT_INST                                                         UART0
@@ -177,29 +191,36 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 /* Defines for B22: GPIOB.22 with pinCMx 50 on package pin 21 */
 #define LED_B22_PIN                                             (DL_GPIO_PIN_22)
 #define LED_B22_IOMUX                                            (IOMUX_PINCM50)
-/* Port definition for Pin Group GRAYSCALE */
-#define GRAYSCALE_PORT                                                   (GPIOA)
+/* Port definition for Pin Group MPU_INT */
+#define MPU_INT_PORT                                                     (GPIOB)
 
-/* Defines for AD0: GPIOA.14 with pinCMx 36 on package pin 7 */
-#define GRAYSCALE_AD0_PIN                                       (DL_GPIO_PIN_14)
-#define GRAYSCALE_AD0_IOMUX                                      (IOMUX_PINCM36)
-/* Defines for AD1: GPIOA.15 with pinCMx 37 on package pin 8 */
-#define GRAYSCALE_AD1_PIN                                       (DL_GPIO_PIN_15)
-#define GRAYSCALE_AD1_IOMUX                                      (IOMUX_PINCM37)
-/* Defines for AD2: GPIOA.16 with pinCMx 38 on package pin 9 */
-#define GRAYSCALE_AD2_PIN                                       (DL_GPIO_PIN_16)
-#define GRAYSCALE_AD2_IOMUX                                      (IOMUX_PINCM38)
-/* Defines for OUT: GPIOA.17 with pinCMx 39 on package pin 10 */
-#define GRAYSCALE_OUT_PIN                                       (DL_GPIO_PIN_17)
-#define GRAYSCALE_OUT_IOMUX                                      (IOMUX_PINCM39)
+/* Defines for INT: GPIOB.1 with pinCMx 13 on package pin 48 */
+// groups represented: ["KEY","ENCODER","MPU_INT"]
+// pins affected: ["KEY9","KEY10","LEFT_PULSE","RIGHT_PULSE","INT"]
+#define GPIO_MULTIPLE_GPIOB_INT_IRQN                            (GPIOB_INT_IRQn)
+#define GPIO_MULTIPLE_GPIOB_INT_IIDX            (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
+#define MPU_INT_INT_IIDX                                     (DL_GPIO_IIDX_DIO1)
+#define MPU_INT_INT_PIN                                          (DL_GPIO_PIN_1)
+#define MPU_INT_INT_IOMUX                                        (IOMUX_PINCM13)
+/* Port definition for Pin Group GRAYSCALE */
+#define GRAYSCALE_PORT                                                   (GPIOB)
+
+/* Defines for AD0: GPIOB.12 with pinCMx 29 on package pin 64 */
+#define GRAYSCALE_AD0_PIN                                       (DL_GPIO_PIN_12)
+#define GRAYSCALE_AD0_IOMUX                                      (IOMUX_PINCM29)
+/* Defines for AD1: GPIOB.4 with pinCMx 17 on package pin 52 */
+#define GRAYSCALE_AD1_PIN                                        (DL_GPIO_PIN_4)
+#define GRAYSCALE_AD1_IOMUX                                      (IOMUX_PINCM17)
+/* Defines for AD2: GPIOB.5 with pinCMx 18 on package pin 53 */
+#define GRAYSCALE_AD2_PIN                                        (DL_GPIO_PIN_5)
+#define GRAYSCALE_AD2_IOMUX                                      (IOMUX_PINCM18)
+/* Defines for OUT: GPIOB.13 with pinCMx 30 on package pin 1 */
+#define GRAYSCALE_OUT_PIN                                       (DL_GPIO_PIN_13)
+#define GRAYSCALE_OUT_IOMUX                                      (IOMUX_PINCM30)
 /* Port definition for Pin Group KEY */
 #define KEY_PORT                                                         (GPIOB)
 
 /* Defines for KEY9: GPIOB.6 with pinCMx 23 on package pin 58 */
-// groups represented: ["ENCODER","KEY"]
-// pins affected: ["RIGHT_PULSE","KEY9","KEY10"]
-#define GPIO_MULTIPLE_GPIOB_INT_IRQN                            (GPIOB_INT_IRQn)
-#define GPIO_MULTIPLE_GPIOB_INT_IIDX            (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
 #define KEY_KEY9_IIDX                                        (DL_GPIO_IIDX_DIO6)
 #define KEY_KEY9_PIN                                             (DL_GPIO_PIN_6)
 #define KEY_KEY9_IOMUX                                           (IOMUX_PINCM23)
@@ -227,16 +248,14 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define DC_MOTOR_BIN2_PORT                                               (GPIOB)
 #define DC_MOTOR_BIN2_PIN                                       (DL_GPIO_PIN_18)
 #define DC_MOTOR_BIN2_IOMUX                                      (IOMUX_PINCM44)
-/* Defines for LEFT_PULSE: GPIOA.22 with pinCMx 47 on package pin 18 */
-#define ENCODER_LEFT_PULSE_PORT                                          (GPIOA)
-// pins affected by this interrupt request:["LEFT_PULSE"]
-#define ENCODER_GPIOA_INT_IRQN                                  (GPIOA_INT_IRQn)
-#define ENCODER_GPIOA_INT_IIDX                  (DL_INTERRUPT_GROUP1_IIDX_GPIOA)
-#define ENCODER_LEFT_PULSE_IIDX                             (DL_GPIO_IIDX_DIO22)
-#define ENCODER_LEFT_PULSE_PIN                                  (DL_GPIO_PIN_22)
-#define ENCODER_LEFT_PULSE_IOMUX                                 (IOMUX_PINCM47)
+/* Port definition for Pin Group ENCODER */
+#define ENCODER_PORT                                                     (GPIOB)
+
+/* Defines for LEFT_PULSE: GPIOB.8 with pinCMx 25 on package pin 60 */
+#define ENCODER_LEFT_PULSE_IIDX                              (DL_GPIO_IIDX_DIO8)
+#define ENCODER_LEFT_PULSE_PIN                                   (DL_GPIO_PIN_8)
+#define ENCODER_LEFT_PULSE_IOMUX                                 (IOMUX_PINCM25)
 /* Defines for RIGHT_PULSE: GPIOB.9 with pinCMx 26 on package pin 61 */
-#define ENCODER_RIGHT_PULSE_PORT                                         (GPIOB)
 #define ENCODER_RIGHT_PULSE_IIDX                             (DL_GPIO_IIDX_DIO9)
 #define ENCODER_RIGHT_PULSE_PIN                                  (DL_GPIO_PIN_9)
 #define ENCODER_RIGHT_PULSE_IOMUX                                (IOMUX_PINCM26)
@@ -254,6 +273,7 @@ void SYSCFG_DL_SERVO_init(void);
 void SYSCFG_DL_PWMAB_init(void);
 void SYSCFG_DL_MOTOR_PID_init(void);
 void SYSCFG_DL_OLED_init(void);
+void SYSCFG_DL_MPU6050_init(void);
 void SYSCFG_DL_PRINT_init(void);
 void SYSCFG_DL_VREF_init(void);
 

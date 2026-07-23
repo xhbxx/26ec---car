@@ -7,6 +7,7 @@
 "./user_driver/key.o"
 "./user_driver/line_tracking.o"
 "./user_driver/motor.o"
+"./user_driver/mpu6050.o"
 "./user_driver/oled.o"
 "./user_driver/uart.o"
 "./user_driver/uart_io.o"
