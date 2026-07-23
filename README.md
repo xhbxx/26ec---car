@@ -1,14 +1,23 @@
-# MSPM0G3507 双路 TB6612 PWM 电机驱动
+# 26EC 循迹小车
 
-本工程已由原“一路直流电机 PID”示例改为双路 PWM 电机灰度循迹与速度闭环工程。
-
-- 主循环读取八路数字灰度模块，并控制双路电机直行或差速转弯；
-- 沿用原工程的50 ms编码器速度采样和增量式PID闭环；
-- 保留并补全原工程的 `motor_init()`、`motor_set_duty()`、`motor_set_direction()` 接口；
-- 新增 `motor_drive_percent()` 和 `motor_stop()`，便于直接控制两路电机。
+# 已实现
+    1.灰度循迹及其逻辑
+    2.电机驱动+PID
+# 待修改
+    1.调整pid
+    2.硬件板子有点问题
 
 ## 按键 
-|A23|A21|A18|A17|
+| MSPM0G3507 | PID action | Button wiring |
+|---|---|---|
+| PA23 | Kp + 1 | Press connects PA23 to GND |
+| PA21 | Kp - 1 | Press connects PA21 to GND |
+| PA18 | Ki + 1 | Press connects PA18 to GND |
+| PA17 | Ki - 1 | Press connects PA17 to GND |
+
+The four inputs use internal pull-up resistors and are active low. Each press changes one step;
+holding a key does not repeat until it is released. Kp and Ki are limited to
+0..100 and are shown on OLED row 3.
 
 ## 其余模块接线
 
@@ -58,7 +67,7 @@ TB6612 的 `VM` 接电机独立电源正极；`AO1/AO2` 接电机A两端；`BO1/
 
 | MSPM0G3507 | 信号 | 用途 |
 |---|---|---|
-| PA22 | 左编码器输出 | ADC0通道7，`encoder.c`中按2048阈值采样 |
+| PB8 | 左编码器输出 | ADC0通道7，`encoder.c`中按2048阈值采样 |
 | PB9 | 右编码器输出 | GPIO数字采样，避免占用灰度和ADC引脚 |
 | GND | 编码器地 | 必须共地，编码器输出不得超过3.3V |
 

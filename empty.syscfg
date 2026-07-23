@@ -27,7 +27,6 @@ const TIMER  = scripting.addModule("/ti/driverlib/TIMER", {}, false);
 const TIMER1 = TIMER.addInstance();
 const UART   = scripting.addModule("/ti/driverlib/UART", {}, false);
 const UART1  = UART.addInstance();
-const VREF   = scripting.addModule("/ti/driverlib/VREF");
 
 /**
  * Write custom configuration values to the imported modules.
@@ -63,19 +62,23 @@ GPIO1.associatedPins[3].pin.$assign = "PB13";
 const Board = scripting.addModule("/ti/driverlib/Board", {}, false);
 
 GPIO2.$name                              = "KEY";
-GPIO2.associatedPins.create(2);
-GPIO2.associatedPins[0].$name            = "KEY9";
+GPIO2.associatedPins.create(4);
+GPIO2.associatedPins[0].$name            = "KP_INC";
 GPIO2.associatedPins[0].direction        = "INPUT";
-GPIO2.associatedPins[0].internalResistor = "PULL_DOWN";
-GPIO2.associatedPins[0].interruptEn      = true;
-GPIO2.associatedPins[0].polarity         = "RISE";
-GPIO2.associatedPins[0].pin.$assign      = "PB6";
-GPIO2.associatedPins[1].$name            = "KEY10";
+GPIO2.associatedPins[0].internalResistor = "PULL_UP";
+GPIO2.associatedPins[0].pin.$assign      = "PA23";
+GPIO2.associatedPins[1].$name            = "KP_DEC";
 GPIO2.associatedPins[1].direction        = "INPUT";
-GPIO2.associatedPins[1].internalResistor = "PULL_DOWN";
-GPIO2.associatedPins[1].interruptEn      = true;
-GPIO2.associatedPins[1].polarity         = "RISE";
-GPIO2.associatedPins[1].pin.$assign      = "PB7";
+GPIO2.associatedPins[1].internalResistor = "PULL_UP";
+GPIO2.associatedPins[1].pin.$assign      = "PA21";
+GPIO2.associatedPins[2].$name            = "KI_INC";
+GPIO2.associatedPins[2].direction        = "INPUT";
+GPIO2.associatedPins[2].internalResistor = "PULL_UP";
+GPIO2.associatedPins[2].pin.$assign      = "PA18";
+GPIO2.associatedPins[3].$name            = "KI_DEC";
+GPIO2.associatedPins[3].direction        = "INPUT";
+GPIO2.associatedPins[3].internalResistor = "PULL_UP";
+GPIO2.associatedPins[3].pin.$assign      = "PA17";
 
 GPIO3.$name                         = "DC_MOTOR";
 GPIO3.associatedPins.create(5);
@@ -110,13 +113,12 @@ GPIO5.port                          = "PORTB";
 GPIO5.associatedPins[0].$name       = "B22";
 GPIO5.associatedPins[0].pin.$assign = "PB22";
 
+/* MPU6050 is not used at runtime; keep its pin macros for the retained source file. */
 GPIO6.$name                              = "MPU_INT";
 GPIO6.port                               = "PORTB";
 GPIO6.associatedPins[0].$name            = "INT";
 GPIO6.associatedPins[0].direction        = "INPUT";
 GPIO6.associatedPins[0].internalResistor = "PULL_DOWN";
-GPIO6.associatedPins[0].interruptEn      = true;
-GPIO6.associatedPins[0].polarity         = "RISE";
 GPIO6.associatedPins[0].pin.$assign      = "PB1";
 
 I2C1.$name                             = "OLED";
@@ -225,10 +227,6 @@ UART1.rxPinConfig.onlyInternalResistor = scripting.forceWrite(false);
 UART1.rxPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
 UART1.rxPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric3";
 
-VREF.basicIntVolt           = "DL_VREF_BUFCONFIG_OUTPUT_2_5V";
-VREF.profile                = "INT_2_5_V";
-VREF.vrefPosPinConfig.$name = "ti_driverlib_gpio_GPIOPinGeneric5";
-
 /**
  * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future
  * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
@@ -241,5 +239,3 @@ Board.peripheral.$suggestSolution                  = "DEBUGSS";
 Board.peripheral.swclkPin.$suggestSolution         = "PA20";
 Board.peripheral.swdioPin.$suggestSolution         = "PA19";
 UART1.peripheral.$suggestSolution                  = "UART0";
-VREF.peripheral.$suggestSolution                   = "VREF";
-VREF.peripheral.vrefPosPin.$suggestSolution        = "PA23";

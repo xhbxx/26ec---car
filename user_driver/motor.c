@@ -3,14 +3,52 @@
 #include "encoder.h"
 
 typedef struct {
-    int32_t integral;
     int32_t last_error;
+    int32_t actual_speed_mm_s;
     uint32_t duty;
 } MotorPid;
 
 /* 左右轮目标百分比和各自独立的 PID 状态。 */
 static volatile int16_t motor_target_percent[2] = {0, 0};
 static MotorPid motor_pid[2] = {{0, 0, 0U}, {0, 0, 0U}};
+static volatile int32_t motor_pid_kp = MOTOR_PID_KP;
+static volatile int32_t motor_pid_ki = MOTOR_PID_KI;
+
+/** Return the runtime proportional gain used by both motor PID loops. */
+int32_t motor_get_pid_kp(void)
+{
+    return motor_pid_kp;
+}
+
+/** Return the runtime integral gain used by both motor PID loops. */
+int32_t motor_get_pid_ki(void)
+{
+    return motor_pid_ki;
+}
+
+/** Adjust Kp by one key step and keep it in a practical non-negative range. */
+void motor_adjust_pid_kp(int32_t delta)
+{
+    int32_t value = motor_pid_kp + delta;
+    if (value < 0) {
+        value = 0;
+    } else if (value > 100) {
+        value = 100;
+    }
+    motor_pid_kp = value;
+}
+
+/** Adjust Ki by one key step for the incremental PI controller. */
+void motor_adjust_pid_ki(int32_t delta)
+{
+    int32_t value = motor_pid_ki + delta;
+    if (value < 0) {
+        value = 0;
+    } else if (value > 100) {
+        value = 100;
+    }
+    motor_pid_ki = value;
+}
 
 /** 初始化指定电机通道；PWM 和 STBY 只在主函数启动阶段配置。 */
 void motor_init(uint8_t motor_id)
@@ -23,8 +61,8 @@ void motor_init(uint8_t motor_id)
     DL_GPIO_setPins(DC_MOTOR_STBY_PORT, DC_MOTOR_STBY_PIN);
     DL_Timer_startCounter(PWMAB_INST);
     motor_target_percent[index] = 0;
-    motor_pid[index].integral = 0;
     motor_pid[index].last_error = 0;
+    motor_pid[index].actual_speed_mm_s = 0;
     motor_pid[index].duty = 0U;
     motor_set_duty(motor_id, 0U);
     motor_set_direction(motor_id, MOTOR_DIRECTION_BRAKE);
@@ -103,9 +141,9 @@ void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
     motor_set_direction(motor_id, signed_percent > 0
         ? MOTOR_DIRECTION_FORWARD : MOTOR_DIRECTION_REVERSE);
     /* 目标变化时才更新基础 PWM，避免主循环反复覆盖 PID 输出。 */
-    if (signed_percent != previous_target) {
-        motor_pid[index].integral = 0;
-        motor_pid[index].last_error = 0;
+    /* Keep PID state across normal tracking corrections; seed PWM only on start/reverse. */
+    if ((previous_target == 0) ||
+        ((previous_target < 0) != (signed_percent < 0))) {
         motor_pid[index].duty =
             ((uint32_t)magnitude * MOTOR_PWM_PERIOD_COUNTS) / 100U;
         motor_set_duty(motor_id, motor_pid[index].duty);
@@ -130,8 +168,8 @@ void motor_stop(uint8_t motor_id)
     }
     index = (uint8_t)(motor_id - MOTOR_ID_A);
     motor_target_percent[index] = 0;
-    motor_pid[index].integral = 0;
     motor_pid[index].last_error = 0;
+    motor_pid[index].actual_speed_mm_s = 0;
     motor_pid[index].duty = 0U;
     motor_set_duty(motor_id, 0U);
     motor_set_direction(motor_id, MOTOR_DIRECTION_BRAKE);
@@ -141,31 +179,35 @@ void motor_stop(uint8_t motor_id)
  * 根据目标百分比和实际脉冲计算一次 PID 输出。
  * 输出 = 百分比基础 PWM + P项 + I项 + D项。
  */
+/** Convert encoder pulses collected over one PID period to wheel speed in mm/s. */
+static int32_t motor_calculate_speed_mm_s(int32_t pulses)
+{
+    /* speed = pulses / 260 * PI * 67 / 0.05; PI is scaled by 10000. */
+    return (pulses * 31416L * MOTOR_WHEEL_DIAMETER_MM) /
+        (10L * MOTOR_ENCODER_PULSES_PER_REV * MOTOR_PID_PERIOD_MS);
+}
+
+/**
+ * Use the same incremental PI formula as the supplied one-motor example:
+ * PWM += Kp * (current_error - last_error) + Ki * current_error.
+ */
 static uint32_t motor_pid_update(
     uint8_t index, int16_t target_percent, int32_t actual_pulses)
 {
     const int32_t magnitude =
         target_percent < 0 ? -target_percent : target_percent;
-    const int32_t target_pulses =
-        (magnitude * MOTOR_ENCODER_PULSES_AT_100) / 100;
-    const int32_t error = target_pulses - actual_pulses;
-    const int32_t base_duty =
-        (magnitude * MOTOR_PWM_PERIOD_COUNTS) / 100;
-    int32_t output;
+    const int32_t target_speed_mm_s =
+        (magnitude * MOTOR_MAX_TARGET_SPEED_MM_S) / 100L;
+    const int32_t actual_speed_mm_s =
+        motor_calculate_speed_mm_s(actual_pulses);
+    const int32_t error = target_speed_mm_s - actual_speed_mm_s;
+    const int32_t duty_increment =
+        (motor_pid_kp * (error - motor_pid[index].last_error) +
+         motor_pid_ki * error) / MOTOR_PID_GAIN_SCALE;
+    int32_t output = (int32_t)motor_pid[index].duty + duty_increment;
 
-    motor_pid[index].integral += error;
-    if (motor_pid[index].integral > MOTOR_PID_INTEGRAL_LIMIT) {
-        motor_pid[index].integral = MOTOR_PID_INTEGRAL_LIMIT;
-    } else if (motor_pid[index].integral < -MOTOR_PID_INTEGRAL_LIMIT) {
-        motor_pid[index].integral = -MOTOR_PID_INTEGRAL_LIMIT;
-    }
-
-    output = base_duty
-        + MOTOR_PID_KP * error
-        + MOTOR_PID_KI * motor_pid[index].integral
-        + MOTOR_PID_KD * (error - motor_pid[index].last_error);
     motor_pid[index].last_error = error;
-
+    motor_pid[index].actual_speed_mm_s = actual_speed_mm_s;
     if (output < 0) {
         output = 0;
     } else if (output > MOTOR_PWM_PERIOD_COUNTS) {

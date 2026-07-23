@@ -89,7 +89,7 @@ main.o: ../main.c \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/motor.h \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/encoder.h \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/oled.h \
- E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/mpu6050.h
+ E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/key.h
 ti_msp_dl_config.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/devices/msp/msp.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/devices/DeviceFamily.h:
@@ -178,4 +178,4 @@ E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/line_tracking.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/motor.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/encoder.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/oled.h:
-E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/mpu6050.h:
+E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/key.h:

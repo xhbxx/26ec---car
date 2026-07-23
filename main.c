@@ -5,7 +5,7 @@
 #include "motor.h"
 #include "encoder.h"
 #include "oled.h"
-#include "mpu6050.h"
+#include "key.h"
 
 /* Display a signed target speed percentage on one OLED row. */
 static void OLED_ShowSignedPercent(uint8_t x, uint8_t y, int16_t value)
@@ -20,7 +20,9 @@ static void OLED_ShowSignedPercent(uint8_t x, uint8_t y, int16_t value)
 /* Show target percentage and measured encoder pulses from the latest 50 ms period. */
 static void OLED_ShowMotorSpeed(uint8_t y, uint8_t motor_id)
 {
-    int32_t pulses = Encoder_Get_Last_Count(motor_id);
+    /* Motor IDs are 1/2, while encoder array indexes are 0/1. */
+    int32_t pulses = Encoder_Get_Last_Count(
+        (uint8_t)(motor_id - MOTOR_ID_A));
 
     OLED_ShowString(0U, y, (u8 *)"T:", 16U);
     OLED_ShowSignedPercent(16U, y, motor_get_target_percent(motor_id));
@@ -29,6 +31,15 @@ static void OLED_ShowMotorSpeed(uint8_t y, uint8_t motor_id)
         pulses = 0;
     }
     OLED_ShowNum(80U, y, (u32)pulses, 3U, 16U);
+}
+
+/* Show the runtime PID gains changed by the four tuning keys. */
+static void OLED_ShowPidGains(void)
+{
+    OLED_ShowString(0U, 32U, (u8 *)"P:", 16U);
+    OLED_ShowNum(16U, 32U, (u32)motor_get_pid_kp(), 3U, 16U);
+    OLED_ShowString(48U, 32U, (u8 *)" I:", 16U);
+    OLED_ShowNum(72U, 32U, (u32)motor_get_pid_ki(), 3U, 16U);
 }
 
 /**
@@ -52,28 +63,24 @@ int main(void)
     OLED_ShowMotorSpeed(0U, MOTOR_ID_A);
     OLED_ShowMotorSpeed(16U, MOTOR_ID_B);
     /* 下两行按 0~7 顺序显示检测状态：1=黑线，0=未检测到。 */
-    OLED_ShowString(0U, 32U, (u8 *)"01234567", 16U);
+    OLED_ShowPidGains();
     OLED_ShowString(0U, 48U, sensor_text, 16U);
     OLED_Refresh();
     
-    /* MPU6050 uses I2C1 on PB2/PB3. Initialize it only once here. */
-    (void)MPU6050_Init();
-
     motor_init(MOTOR_ID_A);
     motor_init(MOTOR_ID_B);
     /* SysConfig leaves the 50 ms PID timer stopped; start it once here. */
     DL_Timer_startCounter(MOTOR_PID_INST);
     Encoder_Init();
-    /* Both encoder inputs are on GPIOB: PB10 left and PB9 right. */
-    NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
-    NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
+    /* Both encoder inputs are on GPIOB: PB8 left and PB9 right. */
+    NVIC_ClearPendingIRQ(ENCODER_INT_IRQN);
+    NVIC_EnableIRQ(ENCODER_INT_IRQN);
     NVIC_ClearPendingIRQ(MOTOR_PID_INST_INT_IRQN);
     NVIC_EnableIRQ(MOTOR_PID_INST_INT_IRQN);
     Grayscale_Sensor_Init();
 
     while (1) {
-        /* The PB1 interrupt only sets a flag; the I2C read runs in main context. */
-        (void)MPU6050_Update();
+        Key_Process();
         Grayscale_Sensor_Read_All(sensor_values);
         Line_Tracking_Update(sensor_values);
 
@@ -82,6 +89,7 @@ int main(void)
         if (oled_update_count >= 100U) {
             OLED_ShowMotorSpeed(0U, MOTOR_ID_A);
             OLED_ShowMotorSpeed(16U, MOTOR_ID_B);
+            OLED_ShowPidGains();
             for (sensor_channel = 0U;
                  sensor_channel < GRAYSCALE_SENSOR_CHANNELS;
                  sensor_channel++) {

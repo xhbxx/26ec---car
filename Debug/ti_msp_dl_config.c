@@ -59,7 +59,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_init(void)
     SYSCFG_DL_OLED_init();
     SYSCFG_DL_MPU6050_init();
     SYSCFG_DL_PRINT_init();
-    SYSCFG_DL_VREF_init();
     /* Ensure backup structures have no valid state */
 	gSERVOBackup.backupRdy 	= false;
 	gMOTOR_PIDBackup.backupRdy 	= false;
@@ -101,7 +100,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_I2C_reset(OLED_INST);
     DL_I2C_reset(MPU6050_INST);
     DL_UART_Main_reset(PRINT_INST);
-    DL_VREF_reset(VREF);
 
     DL_GPIO_enablePower(GPIOA);
     DL_GPIO_enablePower(GPIOB);
@@ -111,7 +109,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_I2C_enablePower(OLED_INST);
     DL_I2C_enablePower(MPU6050_INST);
     DL_UART_Main_enablePower(PRINT_INST);
-    DL_VREF_enablePower(VREF);
     delay_cycles(POWER_STARTUP_DELAY);
 }
 
@@ -172,12 +169,20 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
 		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
 		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
 
-    DL_GPIO_initDigitalInputFeatures(KEY_KEY9_IOMUX,
-		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_DOWN,
+    DL_GPIO_initDigitalInputFeatures(KEY_KP_INC_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
 		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
 
-    DL_GPIO_initDigitalInputFeatures(KEY_KEY10_IOMUX,
-		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_DOWN,
+    DL_GPIO_initDigitalInputFeatures(KEY_KP_DEC_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(KEY_KI_INC_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(KEY_KI_DEC_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
 		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
 
     DL_GPIO_initDigitalOutput(DC_MOTOR_AIN1_IOMUX);
@@ -216,20 +221,11 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
 		GRAYSCALE_AD2_PIN |
 		DC_MOTOR_STBY_PIN |
 		DC_MOTOR_BIN2_PIN);
-    DL_GPIO_setLowerPinsPolarity(GPIOB, DL_GPIO_PIN_1_EDGE_RISE |
-		DL_GPIO_PIN_6_EDGE_RISE |
-		DL_GPIO_PIN_7_EDGE_RISE |
-		DL_GPIO_PIN_8_EDGE_RISE |
+    DL_GPIO_setLowerPinsPolarity(GPIOB, DL_GPIO_PIN_8_EDGE_RISE |
 		DL_GPIO_PIN_9_EDGE_RISE);
-    DL_GPIO_clearInterruptStatus(GPIOB, MPU_INT_INT_PIN |
-		KEY_KEY9_PIN |
-		KEY_KEY10_PIN |
-		ENCODER_LEFT_PULSE_PIN |
+    DL_GPIO_clearInterruptStatus(GPIOB, ENCODER_LEFT_PULSE_PIN |
 		ENCODER_RIGHT_PULSE_PIN);
-    DL_GPIO_enableInterrupt(GPIOB, MPU_INT_INT_PIN |
-		KEY_KEY9_PIN |
-		KEY_KEY10_PIN |
-		ENCODER_LEFT_PULSE_PIN |
+    DL_GPIO_enableInterrupt(GPIOB, ENCODER_LEFT_PULSE_PIN |
 		ENCODER_RIGHT_PULSE_PIN);
 
 }
@@ -576,25 +572,4 @@ SYSCONFIG_WEAK void SYSCFG_DL_PRINT_init(void)
 
     DL_UART_Main_enable(PRINT_INST);
 }
-
-
-static const DL_VREF_ClockConfig gVREFClockConfig = {
-    .clockSel = DL_VREF_CLOCK_LFCLK,
-    .divideRatio = DL_VREF_CLOCK_DIVIDE_1,
-};
-static const DL_VREF_Config gVREFConfig = {
-    .vrefEnable     = DL_VREF_ENABLE_ENABLE,
-    .bufConfig      = DL_VREF_BUFCONFIG_OUTPUT_2_5V,
-    .shModeEnable   = DL_VREF_SHMODE_DISABLE,
-    .holdCycleCount = DL_VREF_HOLD_MIN,
-    .shCycleCount   = DL_VREF_SH_MIN,
-};
-
-SYSCONFIG_WEAK void SYSCFG_DL_VREF_init(void) {
-    DL_VREF_setClockConfig(VREF,
-        (DL_VREF_ClockConfig *) &gVREFClockConfig);
-    DL_VREF_configReference(VREF,
-        (DL_VREF_Config *) &gVREFConfig);
-}
-
 
