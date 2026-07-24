@@ -85,7 +85,7 @@ user_driver/line_tracking.o: ../user_driver/line_tracking.c \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h \
  C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h \
- ../user_driver/motor.h
+ ../user_driver/mpu6050.h ../user_driver/motor.h
 ../user_driver/line_tracking.h:
 ../user_driver/grayscale_sensor.h:
 ti_msp_dl_config.h:
@@ -171,4 +171,5 @@ C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_vref.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h:
+../user_driver/mpu6050.h:
 ../user_driver/motor.h:

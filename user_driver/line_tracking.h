@@ -8,19 +8,26 @@
 #define TRACK_AUTO_ACTIVE_LEVEL          (0U)
 
 /* 正常循迹速度和差速修正上限，单位为 motor_drive_percent() 百分比。 */
-#define TRACK_REFERENCE_BASE_PERCENT     (40)// 中间直行基础速度
+#define TRACK_REFERENCE_BASE_PERCENT     (30)// 中间直行基础速度
 #define TRACK_SLOWDOWN_PER_SENSOR         (5)// 每偏一格降低多少速度
 #define TRACK_MIN_FORWARD_PERCENT        (10)// 转弯时最低前进速度
 #define TRACK_MAX_CORRECTION_PERCENT      (20)// 最大左右差速
 #define TRACK_EDGE_SLOWDOWN_PERCENT       (10)// 到最外侧时基础速度降低10%
 
+/* GY-6500 Z轴角速度校准和丢线直行修正参数。 */
+#define TRACK_GYRO_CALIBRATION_SAMPLES    (200U)
+#define TRACK_GYRO_DEADBAND_RAW           (65L)  /* about 1 deg/s at +/-500 deg/s */
+#define TRACK_GYRO_RAW_PER_PERCENT        (300L)
+#define TRACK_GYRO_MAX_CORRECTION_PERCENT (4)
+#define TRACK_GYRO_CORRECTION_SIGN        (-1)
+
 /* 0~7 编号中，只有 3、4 两个中央探头同时且单独有效时允许直行。 */
 #define TRACK_CENTER_MASK                ((1U << 3) | (1U << 4))
 #define TRACK_CENTER_ESCAPE_PERCENT      (30)
 
-#define TRACK_LOST_LEFT_PERCENT        (20)
-#define TRACK_LOST_RIGHT_PERCENT       (20)
-#define TRACK_LOST_CENTER_PERCENT      (20)
+#define TRACK_LOST_LEFT_PERCENT        (10)
+#define TRACK_LOST_RIGHT_PERCENT       (10)
+#define TRACK_LOST_CENTER_PERCENT      (10)
 
 /* 方框转弯方向：1 为连续右转（顺时针），-1 为连续左转（逆时针）。 */
 
@@ -30,6 +37,11 @@
 #define LEFT_MOTOR_FORWARD_SIGN        (1)
 #define RIGHT_MOTOR_FORWARD_SIGN       (1)
 
-void Line_Tracking_Update(const uint16_t sensor_values[8]);
+uint8_t Line_Tracking_Update(const uint16_t sensor_values[8]);
+int16_t Line_Tracking_GetGyroRaw(void);
+int16_t Line_Tracking_GetGyroBias(void);
+int16_t Line_Tracking_GetGyroError(void);
+int16_t Line_Tracking_GetGyroCorrection(void);
+uint8_t Line_Tracking_IsGyroReady(void);
 
 #endif /* LINE_TRACKING_H */

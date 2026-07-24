@@ -2,7 +2,8 @@
 
 #include "ti_msp_dl_config.h"
 
-#define MPU6050_ADDRESS              (0x68U)
+#define MPU6050_ADDRESS_AD0_LOW      (0x68U)
+#define MPU6050_ADDRESS_AD0_HIGH     (0x69U)
 #define MPU6050_REG_SMPLRT_DIV       (0x19U)
 #define MPU6050_REG_CONFIG           (0x1AU)
 #define MPU6050_REG_GYRO_CONFIG      (0x1BU)
@@ -12,11 +13,24 @@
 #define MPU6050_REG_PWR_MGMT_1       (0x6BU)
 #define MPU6050_REG_WHO_AM_I         (0x75U)
 #define MPU6050_WHO_AM_I_VALUE       (0x68U)
+#define MPU6500_WHO_AM_I_VALUE       (0x70U)
 #define MPU6050_I2C_TIMEOUT_LOOPS    (100000U)
 
 static volatile uint8_t g_mpu6050_data_ready = 0U;
 static uint8_t g_mpu6050_online = 0U;
+static uint8_t g_mpu6050_status = 0U;
+static uint8_t g_mpu6050_who_am_i = 0U;
+static uint8_t g_mpu6050_address = MPU6050_ADDRESS_AD0_LOW;
+static uint16_t g_mpu6050_reconnect_count = 0U;
+static uint8_t g_mpu6050_read_fail_count = 0U;
 static MPU6050_RawData g_mpu6050_raw_data = {0};
+
+/* GY-6500 uses MPU6500 (WHO_AM_I=0x70); keep MPU6050 compatibility. */
+static uint8_t MPU6050_IsSupportedDevice(uint8_t who_am_i)
+{
+    return ((who_am_i == MPU6500_WHO_AM_I_VALUE) ||
+            (who_am_i == MPU6050_WHO_AM_I_VALUE)) ? 1U : 0U;
+}
 
 /* Recover the controller after NACK, a disconnected sensor, or a bus timeout. */
 static void MPU6050_ResetTransfer(void)
@@ -47,6 +61,30 @@ static uint8_t MPU6050_WaitForStatus(uint32_t status_mask)
     return 0U;
 }
 
+/* Wait for START, data and STOP to finish, following TI's polling example. */
+static uint8_t MPU6050_WaitTransferDone(void)
+{
+    uint32_t timeout = MPU6050_I2C_TIMEOUT_LOOPS;
+    uint32_t status;
+
+    do {
+        status = DL_I2C_getControllerStatus(MPU6050_INST);
+        if ((status & DL_I2C_CONTROLLER_STATUS_ERROR) != 0U) {
+            MPU6050_ResetTransfer();
+            return 0U;
+        }
+        if ((status & DL_I2C_CONTROLLER_STATUS_BUSY) == 0U) {
+            break;
+        }
+    } while (--timeout != 0U);
+
+    if (timeout == 0U) {
+        MPU6050_ResetTransfer();
+        return 0U;
+    }
+    return MPU6050_WaitForStatus(DL_I2C_CONTROLLER_STATUS_IDLE);
+}
+
 /* Write one MPU6050 register using the dedicated I2C1 controller. */
 static uint8_t MPU6050_WriteRegister(uint8_t reg, uint8_t value)
 {
@@ -57,11 +95,11 @@ static uint8_t MPU6050_WriteRegister(uint8_t reg, uint8_t value)
     }
 
     DL_I2C_fillControllerTXFIFO(MPU6050_INST, tx_data, 2U);
-    DL_I2C_startControllerTransfer(MPU6050_INST, MPU6050_ADDRESS,
+    DL_I2C_startControllerTransfer(MPU6050_INST, g_mpu6050_address,
         DL_I2C_CONTROLLER_DIRECTION_TX, 2U);
     delay_cycles(8U); /* I2C_ERR_13 workaround required by MSPM0 DriverLib. */
 
-    return MPU6050_WaitForStatus(DL_I2C_CONTROLLER_STATUS_IDLE);
+    return MPU6050_WaitTransferDone();
 }
 
 /* Select a register, then receive consecutive bytes from the MPU6050. */
@@ -79,15 +117,15 @@ static uint8_t MPU6050_ReadRegisters(uint8_t reg, uint8_t *data, uint8_t length)
         return 0U;
     }
 
-    DL_I2C_fillControllerTXFIFO(MPU6050_INST, &reg, 1U);
-    DL_I2C_startControllerTransfer(MPU6050_INST, MPU6050_ADDRESS,
+    DL_I2C_transmitControllerData(MPU6050_INST, reg);
+    DL_I2C_startControllerTransfer(MPU6050_INST, g_mpu6050_address,
         DL_I2C_CONTROLLER_DIRECTION_TX, 1U);
     delay_cycles(8U);
-    if (MPU6050_WaitForStatus(DL_I2C_CONTROLLER_STATUS_IDLE) == 0U) {
+    if (MPU6050_WaitTransferDone() == 0U) {
         return 0U;
     }
 
-    DL_I2C_startControllerTransfer(MPU6050_INST, MPU6050_ADDRESS,
+    DL_I2C_startControllerTransfer(MPU6050_INST, g_mpu6050_address,
         DL_I2C_CONTROLLER_DIRECTION_RX, length);
     delay_cycles(8U);
 
@@ -104,23 +142,47 @@ static uint8_t MPU6050_ReadRegisters(uint8_t reg, uint8_t *data, uint8_t length)
         data[index] = DL_I2C_receiveControllerData(MPU6050_INST);
     }
 
-    return MPU6050_WaitForStatus(DL_I2C_CONTROLLER_STATUS_IDLE);
+    return MPU6050_WaitTransferDone();
 }
 
 uint8_t MPU6050_Init(void)
 {
-    uint8_t who_am_i = 0U;
+    static const uint8_t addresses[2] = {
+        MPU6050_ADDRESS_AD0_LOW, MPU6050_ADDRESS_AD0_HIGH
+    };
+    uint8_t address_index;
+    uint8_t retry;
 
     g_mpu6050_online = 0U;
+    g_mpu6050_status = 0U;
+    g_mpu6050_who_am_i = 0U;
     g_mpu6050_data_ready = 0U;
 
-    if ((MPU6050_ReadRegisters(MPU6050_REG_WHO_AM_I, &who_am_i, 1U) == 0U) ||
-        (who_am_i != MPU6050_WHO_AM_I_VALUE)) {
+    /* Some modules become ready later than the MCU after power-on. */
+    DL_Common_delayCycles(CPUCLK_FREQ / 5U);
+
+    /* Probe both AD0 states and retry after a NACK or slow power-up. */
+    for (address_index = 0U; address_index < 2U; address_index++) {
+        g_mpu6050_address = addresses[address_index];
+        for (retry = 0U; retry < 3U; retry++) {
+            if ((MPU6050_ReadRegisters(MPU6050_REG_WHO_AM_I,
+                    &g_mpu6050_who_am_i, 1U) != 0U) &&
+                (MPU6050_IsSupportedDevice(g_mpu6050_who_am_i) != 0U)) {
+                break;
+            }
+            DL_Common_delayCycles(CPUCLK_FREQ / 100U);
+        }
+        if (MPU6050_IsSupportedDevice(g_mpu6050_who_am_i) != 0U) {
+            break;
+        }
+    }
+    if (MPU6050_IsSupportedDevice(g_mpu6050_who_am_i) == 0U) {
         return 0U;
     }
 
     /* Reset, use X-axis gyro clock, sample at 100 Hz, and enable data-ready INT. */
     if (MPU6050_WriteRegister(MPU6050_REG_PWR_MGMT_1, 0x80U) == 0U) {
+        g_mpu6050_status = 3U;
         return 0U;
     }
     DL_Common_delayCycles(CPUCLK_FREQ / 10U);
@@ -131,10 +193,14 @@ uint8_t MPU6050_Init(void)
         (MPU6050_WriteRegister(MPU6050_REG_GYRO_CONFIG, 0x08U) == 0U) ||
         (MPU6050_WriteRegister(MPU6050_REG_ACCEL_CONFIG, 0x00U) == 0U) ||
         (MPU6050_WriteRegister(MPU6050_REG_INT_ENABLE, 0x01U) == 0U)) {
+        g_mpu6050_status = 3U;
         return 0U;
     }
 
     g_mpu6050_online = 1U;
+    g_mpu6050_status = 1U;
+    g_mpu6050_reconnect_count = 0U;
+    g_mpu6050_read_fail_count = 0U;
     return 1U;
 }
 
@@ -147,13 +213,25 @@ uint8_t MPU6050_Update(void)
 {
     uint8_t bytes[14];
 
-    if ((g_mpu6050_online == 0U) || (g_mpu6050_data_ready == 0U)) {
+    if (g_mpu6050_online == 0U) {
+        /* Main calls this every 5 ms, so retry connection about once a second. */
+        g_mpu6050_reconnect_count++;
+        if (g_mpu6050_reconnect_count >= 200U) {
+            g_mpu6050_reconnect_count = 0U;
+            (void)MPU6050_Init();
+        }
         return 0U;
     }
+    /* Polling fallback keeps values updating when the INT wire is unavailable. */
     g_mpu6050_data_ready = 0U;
 
     if (MPU6050_ReadRegisters(MPU6050_REG_ACCEL_XOUT_H, bytes, 14U) == 0U) {
-        /* Keep the device online so the next data-ready interrupt can retry. */
+        g_mpu6050_status = 2U;
+        g_mpu6050_read_fail_count++;
+        if (g_mpu6050_read_fail_count >= 10U) {
+            g_mpu6050_online = 0U;
+            g_mpu6050_reconnect_count = 200U;
+        }
         return 0U;
     }
 
@@ -164,6 +242,8 @@ uint8_t MPU6050_Update(void)
     g_mpu6050_raw_data.gyro_x = (int16_t)((bytes[8] << 8) | bytes[9]);
     g_mpu6050_raw_data.gyro_y = (int16_t)((bytes[10] << 8) | bytes[11]);
     g_mpu6050_raw_data.gyro_z = (int16_t)((bytes[12] << 8) | bytes[13]);
+    g_mpu6050_status = 1U;
+    g_mpu6050_read_fail_count = 0U;
     return 1U;
 }
 
@@ -177,4 +257,19 @@ void MPU6050_GetRawData(MPU6050_RawData *data)
 uint8_t MPU6050_IsOnline(void)
 {
     return g_mpu6050_online;
+}
+
+uint8_t MPU6050_GetStatus(void)
+{
+    return g_mpu6050_status;
+}
+
+uint8_t MPU6050_GetWhoAmI(void)
+{
+    return g_mpu6050_who_am_i;
+}
+
+uint8_t MPU6050_GetAddress(void)
+{
+    return g_mpu6050_address;
 }

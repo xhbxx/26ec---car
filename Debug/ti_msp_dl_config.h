@@ -179,6 +179,11 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 
 
 
+/* Defines for VREF */
+#define VREF_VOLTAGE_MV                                                     2500
+
+
+
 
 /* Port definition for Pin Group LED */
 #define LED_PORT                                                         (GPIOB)
@@ -190,6 +195,11 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define MPU_INT_PORT                                                     (GPIOB)
 
 /* Defines for INT: GPIOB.1 with pinCMx 13 on package pin 48 */
+// groups represented: ["KEY","ENCODER","MPU_INT"]
+// pins affected: ["KEY9","KEY10","LEFT_PULSE","RIGHT_PULSE","INT"]
+#define GPIO_MULTIPLE_GPIOB_INT_IRQN                            (GPIOB_INT_IRQn)
+#define GPIO_MULTIPLE_GPIOB_INT_IIDX            (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
+#define MPU_INT_INT_IIDX                                     (DL_GPIO_IIDX_DIO1)
 #define MPU_INT_INT_PIN                                          (DL_GPIO_PIN_1)
 #define MPU_INT_INT_IOMUX                                        (IOMUX_PINCM13)
 /* Port definition for Pin Group GRAYSCALE */
@@ -208,20 +218,16 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define GRAYSCALE_OUT_PIN                                       (DL_GPIO_PIN_13)
 #define GRAYSCALE_OUT_IOMUX                                      (IOMUX_PINCM30)
 /* Port definition for Pin Group KEY */
-#define KEY_PORT                                                         (GPIOA)
+#define KEY_PORT                                                         (GPIOB)
 
-/* Defines for KP_INC: GPIOA.23 with pinCMx 53 on package pin 24 */
-#define KEY_KP_INC_PIN                                          (DL_GPIO_PIN_23)
-#define KEY_KP_INC_IOMUX                                         (IOMUX_PINCM53)
-/* Defines for KP_DEC: GPIOA.21 with pinCMx 46 on package pin 17 */
-#define KEY_KP_DEC_PIN                                          (DL_GPIO_PIN_21)
-#define KEY_KP_DEC_IOMUX                                         (IOMUX_PINCM46)
-/* Defines for KI_INC: GPIOA.18 with pinCMx 40 on package pin 11 */
-#define KEY_KI_INC_PIN                                          (DL_GPIO_PIN_18)
-#define KEY_KI_INC_IOMUX                                         (IOMUX_PINCM40)
-/* Defines for KI_DEC: GPIOA.17 with pinCMx 39 on package pin 10 */
-#define KEY_KI_DEC_PIN                                          (DL_GPIO_PIN_17)
-#define KEY_KI_DEC_IOMUX                                         (IOMUX_PINCM39)
+/* Defines for KEY9: GPIOB.6 with pinCMx 23 on package pin 58 */
+#define KEY_KEY9_IIDX                                        (DL_GPIO_IIDX_DIO6)
+#define KEY_KEY9_PIN                                             (DL_GPIO_PIN_6)
+#define KEY_KEY9_IOMUX                                           (IOMUX_PINCM23)
+/* Defines for KEY10: GPIOB.7 with pinCMx 24 on package pin 59 */
+#define KEY_KEY10_IIDX                                       (DL_GPIO_IIDX_DIO7)
+#define KEY_KEY10_PIN                                            (DL_GPIO_PIN_7)
+#define KEY_KEY10_IOMUX                                          (IOMUX_PINCM24)
 /* Defines for AIN1: GPIOA.8 with pinCMx 19 on package pin 54 */
 #define DC_MOTOR_AIN1_PORT                                               (GPIOA)
 #define DC_MOTOR_AIN1_PIN                                        (DL_GPIO_PIN_8)
@@ -246,9 +252,6 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define ENCODER_PORT                                                     (GPIOB)
 
 /* Defines for LEFT_PULSE: GPIOB.8 with pinCMx 25 on package pin 60 */
-// pins affected by this interrupt request:["LEFT_PULSE","RIGHT_PULSE"]
-#define ENCODER_INT_IRQN                                        (GPIOB_INT_IRQn)
-#define ENCODER_INT_IIDX                        (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
 #define ENCODER_LEFT_PULSE_IIDX                              (DL_GPIO_IIDX_DIO8)
 #define ENCODER_LEFT_PULSE_PIN                                   (DL_GPIO_PIN_8)
 #define ENCODER_LEFT_PULSE_IOMUX                                 (IOMUX_PINCM25)
@@ -272,6 +275,7 @@ void SYSCFG_DL_MOTOR_PID_init(void);
 void SYSCFG_DL_OLED_init(void);
 void SYSCFG_DL_MPU6050_init(void);
 void SYSCFG_DL_PRINT_init(void);
+void SYSCFG_DL_VREF_init(void);
 
 
 bool SYSCFG_DL_saveConfiguration(void);

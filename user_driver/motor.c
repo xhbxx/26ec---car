@@ -83,6 +83,17 @@ static uint32_t limit_duty(uint32_t duty)
     return duty > MOTOR_PWM_PERIOD_COUNTS ? MOTOR_PWM_PERIOD_COUNTS : duty;
 }
 
+/** Calculate the maximum PWM allowed for the current target percentage. */
+static uint32_t motor_max_duty_for_target(int32_t target_magnitude)
+{
+    int32_t max_percent = target_magnitude + MOTOR_PID_DUTY_HEADROOM_PERCENT;
+
+    if (max_percent > 100) {
+        max_percent = 100;
+    }
+    return ((uint32_t)max_percent * MOTOR_PWM_PERIOD_COUNTS) / 100U;
+}
+
 /** 设置指定通道的 PWM 占空比。 */
 void motor_set_duty(uint8_t motor_id, uint32_t duty)
 {
@@ -167,6 +178,8 @@ void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
     } else if (magnitude != previous_magnitude) {
         const int32_t previous_base_duty =
             ((int32_t)previous_magnitude * MOTOR_PWM_PERIOD_COUNTS) / 100L;
+        const uint32_t max_target_duty =
+            motor_max_duty_for_target(magnitude);
         int32_t adjusted_duty = (int32_t)motor_pid[index].duty +
             (int32_t)target_base_duty - previous_base_duty;
 
@@ -176,8 +189,8 @@ void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
          */
         if (adjusted_duty < 0) {
             adjusted_duty = 0;
-        } else if (adjusted_duty > (int32_t)MOTOR_PWM_PERIOD_COUNTS) {
-            adjusted_duty = (int32_t)MOTOR_PWM_PERIOD_COUNTS;
+        } else if (adjusted_duty > (int32_t)max_target_duty) {
+            adjusted_duty = (int32_t)max_target_duty;
         }
         motor_pid[index].duty = (uint32_t)adjusted_duty;
         motor_set_duty(motor_id, motor_pid[index].duty);
@@ -254,6 +267,8 @@ static uint32_t motor_pid_update(
          motor_pid_ki * error +
          motor_pid_kd * (error - 2L * motor_pid[index].last_error +
              motor_pid[index].previous_error)) / MOTOR_PID_GAIN_SCALE;
+    const uint32_t max_target_duty =
+        motor_max_duty_for_target(magnitude);
     int32_t output = (int32_t)motor_pid[index].duty + duty_increment;
 
     motor_pid[index].previous_error = motor_pid[index].last_error;
@@ -261,8 +276,8 @@ static uint32_t motor_pid_update(
     motor_pid[index].actual_speed_percent = actual_speed_percent;
     if (output < 0) {
         output = 0;
-    } else if (output > (int32_t)MOTOR_PWM_PERIOD_COUNTS) {
-        output = (int32_t)MOTOR_PWM_PERIOD_COUNTS;
+    } else if (output > (int32_t)max_target_duty) {
+        output = (int32_t)max_target_duty;
     }
     motor_pid[index].duty = (uint32_t)output;
     return motor_pid[index].duty;

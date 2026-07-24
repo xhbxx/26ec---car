@@ -24,6 +24,9 @@
 #define MOTOR_PID_KI                 (20)
 #define MOTOR_PID_KD                 (0)
 
+/* PID may add this much PWM above the requested speed, but cannot reach 100% from a 40% target. */
+#define MOTOR_PID_DUTY_HEADROOM_PERCENT (15)
+
 void motor_init(uint8_t motor_id);
 void motor_set_duty(uint8_t motor_id, uint32_t duty);
 void motor_set_direction(uint8_t motor_id, uint8_t direction);
