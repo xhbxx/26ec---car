@@ -73,10 +73,12 @@ TB6612 的 `VM` 接电机独立电源正极；`AO1/AO2` 接电机A两端；`BO1/
 
 ## 陀螺仪
 
-| MPU6500| 信号 |
+| MPU6500 | 信号 | 用途 |
 |---|---|---|
-| PB2 | scl | 
-| PB3 | sal |
+| PB2 | SCL | 通信 |
+| PB3 | SAL | 通信 |
+
+
 当前G3507封装的ADC0实例只生成一个外部通道，因此左轮使用ADC采样，右轮使用GPIO采样；两路都在 `Encoder_Sample_ADC()` 中转成上升沿计数。若你的编码器是标准3.3V方波，直接使用GPIO采样更可靠；PA22需要接模拟/脉冲输出并经过限压。
 
 PID参数在 `user_driver/motor.h` 的 `MOTOR_PID_KP`、`MOTOR_PID_KI`、`MOTOR_PID_KD` 修改。闭环在 `user_driver/motor.c` 的 `MOTOR_PID_INST_IRQHandler()` 中运行，周期由 `empty.syscfg` 的 `MOTOR_PID` 定时器决定（当前50 ms）。
