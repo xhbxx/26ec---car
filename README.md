@@ -29,8 +29,8 @@ holding a key does not repeat until it is released. Kp and Ki are limited to
 | PA22 / UART2_RX | 水平轴 Emm42 TX | 接收水平轴驱动器响应 |
 | PA14 / UART3_TX | 俯仰轴 Emm42 RX | 向俯仰轴发送控制命令 |
 | PA13 / UART3_RX | 俯仰轴 Emm42 TX | 接收俯仰轴驱动器响应 |
-| PB2 / I2C1_SCL | OLED SCL（或 SCK） | OLED I2C 时钟 |
-| PB3 / I2C1_SDA | OLED SDA | OLED I2C 数据 |
+| A00 / I2C1_SCL | OLED SCL（或 SCK） | OLED I2C 时钟 |
+| A01 / I2C1_SDA | OLED SDA | OLED I2C 数据 |
 | 3V3 | OLED VCC | OLED 使用 3.3V 供电 |
 | GND | CAM2 GND、两台 Emm42 GND、OLED GND | 所有通信设备必须共地 |
 
@@ -71,6 +71,9 @@ TB6612 的 `VM` 接电机独立电源正极；`AO1/AO2` 接电机A两端；`BO1/
 | PB9 | 右编码器输出 | GPIO数字采样，避免占用灰度和ADC引脚 |
 | GND | 编码器地 | 必须共地，编码器输出不得超过3.3V |
 
+## 陀螺仪
+| PB2 | scl | 
+| PB3 | sal |
 当前G3507封装的ADC0实例只生成一个外部通道，因此左轮使用ADC采样，右轮使用GPIO采样；两路都在 `Encoder_Sample_ADC()` 中转成上升沿计数。若你的编码器是标准3.3V方波，直接使用GPIO采样更可靠；PA22需要接模拟/脉冲输出并经过限压。
 
 PID参数在 `user_driver/motor.h` 的 `MOTOR_PID_KP`、`MOTOR_PID_KI`、`MOTOR_PID_KD` 修改。闭环在 `user_driver/motor.c` 的 `MOTOR_PID_INST_IRQHandler()` 中运行，周期由 `empty.syscfg` 的 `MOTOR_PID` 定时器决定（当前50 ms）。
