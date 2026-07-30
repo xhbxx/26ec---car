@@ -28,7 +28,7 @@ static void grayscale_select_channel(uint8_t channel)
     }
 }
 
-/** 直接读取 PA17/OUT；模块检测到黑线时返回 1。 */
+/** 直接读取地猛星 PA18/OUT；模块检测到黑线时返回 1。 */
 static uint16_t grayscale_read_out(void)
 {
     return (DL_GPIO_readPins(GRAYSCALE_PORT, GRAYSCALE_OUT_PIN) != 0U)

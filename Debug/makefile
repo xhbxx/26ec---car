@@ -13,16 +13,12 @@ ORDERED_OBJS += \
 "./ti_msp_dl_config.o" \
 "./startup_mspm0g350x_ticlang.o" \
 "./main.o" \
+"./user_driver/Emm_V5.o" \
+"./user_driver/bianma.o" \
 "./user_driver/delay.o" \
-"./user_driver/encoder.o" \
-"./user_driver/grayscale_sensor.o" \
-"./user_driver/key.o" \
-"./user_driver/line_tracking.o" \
-"./user_driver/motor.o" \
-"./user_driver/mpu6050.o" \
 "./user_driver/oled.o" \
+"./user_driver/pid.o" \
 "./user_driver/uart.o" \
-"./user_driver/uart_io.o" \
 $(GEN_CMDS__FLAG) \
 -Wl,-ldevice.cmd.genlibs \
 -Wl,-llibc.a \
@@ -148,8 +144,8 @@ all: $(OBJS) $(GEN_CMDS)
 # Other Targets
 clean:
 	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "main.o" "user_driver\delay.o" "user_driver\encoder.o" "user_driver\grayscale_sensor.o" "user_driver\key.o" "user_driver\line_tracking.o" "user_driver\motor.o" "user_driver\mpu6050.o" "user_driver\oled.o" "user_driver\uart.o" "user_driver\uart_io.o" 
-	-$(RM) "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "main.d" "user_driver\delay.d" "user_driver\encoder.d" "user_driver\grayscale_sensor.d" "user_driver\key.d" "user_driver\line_tracking.d" "user_driver\motor.d" "user_driver\mpu6050.d" "user_driver\oled.d" "user_driver\uart.d" "user_driver\uart_io.d" 
+	-$(RM) "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "main.o" "user_driver\Emm_V5.o" "user_driver\bianma.o" "user_driver\delay.o" "user_driver\oled.o" "user_driver\pid.o" "user_driver\uart.o" 
+	-$(RM) "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "main.d" "user_driver\Emm_V5.d" "user_driver\bianma.d" "user_driver\delay.d" "user_driver\oled.d" "user_driver\pid.d" "user_driver\uart.d" 
 	-@echo ' '
 
 .PHONY: all clean dependents

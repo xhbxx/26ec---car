@@ -1,7 +1,6 @@
 #include "key.h"
 
 #include "encoder.h"
-#include "mpu6050.h"
 #include "motor.h"
 
 /* 兼容工程中仍保留的按键模块；双路PWM主程序不使用该状态变量。 */
@@ -54,7 +53,7 @@ uint8_t get_key_state(uint32_t key)
 void GROUP1_IRQHandler(void)
 {
     const uint32_t interrupt_pins = ENCODER_LEFT_PULSE_PIN |
-        ENCODER_RIGHT_PULSE_PIN | MPU_INT_INT_PIN;
+        ENCODER_RIGHT_PULSE_PIN;
     const uint32_t pending =
         DL_GPIO_getEnabledInterruptStatus(GPIOB, interrupt_pins);
 
@@ -64,9 +63,6 @@ void GROUP1_IRQHandler(void)
     }
     if ((pending & ENCODER_RIGHT_PULSE_PIN) != 0U) {
         Encoder_Record_Pulse(1U);
-    }
-    if ((pending & MPU_INT_INT_PIN) != 0U) {
-        MPU6050_OnInterrupt();
     }
     DL_GPIO_clearInterruptStatus(GPIOB, pending);
 }

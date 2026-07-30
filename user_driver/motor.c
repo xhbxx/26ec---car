@@ -6,12 +6,16 @@ typedef struct {
     int32_t previous_error;
     int32_t last_error;
     int32_t actual_speed_percent;
+    int32_t actual_rpm_x10;
     uint32_t duty;
 } MotorPid;
 
-/* 左右轮目标百分比和各自独立的 PID 状态。 */
+/* 左右轮目标百分比、目标输出轴RPM和各自独立的PID状态。 */
 static volatile int16_t motor_target_percent[2] = {0, 0};
-static MotorPid motor_pid[2] = {{0, 0, 0, 0U}, {0, 0, 0, 0U}};
+static volatile int32_t motor_target_rpm_x10[2] = {0, 0};
+static MotorPid motor_pid[2] = {
+    {0, 0, 0, 0, 0U}, {0, 0, 0, 0, 0U}
+};
 static volatile int32_t motor_pid_kp = MOTOR_PID_KP;
 static volatile int32_t motor_pid_ki = MOTOR_PID_KI;
 static volatile int32_t motor_pid_kd = MOTOR_PID_KD;
@@ -69,9 +73,11 @@ void motor_init(uint8_t motor_id)
     DL_GPIO_setPins(DC_MOTOR_STBY_PORT, DC_MOTOR_STBY_PIN);
     DL_Timer_startCounter(PWMAB_INST);
     motor_target_percent[index] = 0;
+    motor_target_rpm_x10[index] = 0;
     motor_pid[index].previous_error = 0;
     motor_pid[index].last_error = 0;
     motor_pid[index].actual_speed_percent = 0;
+    motor_pid[index].actual_rpm_x10 = 0;
     motor_pid[index].duty = 0U;
     motor_set_duty(motor_id, 0U);
     motor_set_direction(motor_id, MOTOR_DIRECTION_BRAKE);
@@ -133,11 +139,9 @@ void motor_set_direction(uint8_t motor_id, uint8_t direction)
     }
 }
 
-/**
- * 原有调速入口：百分比决定目标速度，正负号只决定方向。
- * 实际 PWM 由 50 ms PID 中断根据左右编码器脉冲自动修正。
- */
-void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
+/** 设置目标RPM、方向和基础PWM，后续由50 ms速度PID闭环修正。 */
+static void motor_set_speed_target(
+    uint8_t motor_id, int32_t signed_rpm_x10, int16_t signed_percent)
 {
     uint8_t index;
     int16_t magnitude;
@@ -155,6 +159,7 @@ void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
     }
     previous_target = motor_target_percent[index];
     motor_target_percent[index] = signed_percent;
+    motor_target_rpm_x10[index] = signed_rpm_x10;
     if (signed_percent == 0) {
         motor_stop(motor_id);
         return;
@@ -197,6 +202,73 @@ void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
     }
 }
 
+/**
+ * 百分比调速入口，供循迹算法使用。
+ * 百分比先映射为输出轴目标RPM，再由编码器RPM闭环控制。
+ */
+void motor_drive_percent(uint8_t motor_id, int16_t signed_percent)
+{
+    int32_t signed_rpm_x10;
+
+    if (signed_percent > 100) {
+        signed_percent = 100;
+    } else if (signed_percent < -100) {
+        signed_percent = -100;
+    }
+    signed_rpm_x10 = ((int32_t)signed_percent *
+        MOTOR_MAX_OUTPUT_RPM * MOTOR_RPM_SCALE) / 100L;
+    motor_set_speed_target(motor_id, signed_rpm_x10, signed_percent);
+}
+
+/** 直接设置减速箱输出轴目标转速，正负号决定方向。 */
+void motor_drive_rpm(uint8_t motor_id, int16_t signed_rpm)
+{
+    int32_t signed_percent;
+
+    if (signed_rpm > MOTOR_MAX_OUTPUT_RPM) {
+        signed_rpm = (int16_t)MOTOR_MAX_OUTPUT_RPM;
+    } else if (signed_rpm < -MOTOR_MAX_OUTPUT_RPM) {
+        signed_rpm = (int16_t)-MOTOR_MAX_OUTPUT_RPM;
+    }
+    signed_percent = ((int32_t)signed_rpm * 100L) /
+        MOTOR_MAX_OUTPUT_RPM;
+    if ((signed_rpm != 0) && (signed_percent == 0)) {
+        signed_percent = signed_rpm > 0 ? 1 : -1;
+    }
+    motor_set_speed_target(motor_id,
+        (int32_t)signed_rpm * MOTOR_RPM_SCALE,
+        (int16_t)signed_percent);
+}
+
+/** 直接设置轮胎理论线速度，单位mm/s，正负号决定方向。 */
+void motor_drive_mmps(uint8_t motor_id, int16_t signed_mmps)
+{
+    const int32_t max_speed = MOTOR_MAX_OUTPUT_SPEED_MMPS;
+    int32_t signed_rpm_x10;
+    int32_t signed_rpm;
+    int32_t signed_percent;
+
+    if (signed_mmps > max_speed) {
+        signed_mmps = (int16_t)max_speed;
+    } else if (signed_mmps < -max_speed) {
+        signed_mmps = (int16_t)-max_speed;
+    }
+
+    /* RPM×10 = mm/s × 60 × 10 / (pi × 轮径)。 */
+    signed_rpm_x10 = (int32_t)(((int64_t)signed_mmps * 6000000LL) /
+        ((int64_t)MOTOR_PI_X10000 * MOTOR_WHEEL_DIAMETER_MM));
+    signed_rpm = signed_rpm_x10 / MOTOR_RPM_SCALE;
+    if ((signed_rpm_x10 != 0) && (signed_rpm == 0)) {
+        signed_rpm = signed_rpm_x10 > 0 ? 1 : -1;
+    }
+    signed_percent = (signed_rpm * 100L) / MOTOR_MAX_OUTPUT_RPM;
+    if ((signed_rpm_x10 != 0) && (signed_percent == 0)) {
+        signed_percent = signed_rpm_x10 > 0 ? 1 : -1;
+    }
+    motor_set_speed_target(motor_id, signed_rpm_x10,
+        (int16_t)signed_percent);
+}
+
 /** 停止指定通道并清除该通道 PID 状态。 */
 /* Return the current target percentage for OLED/debug display. */
 int16_t motor_get_target_percent(uint8_t motor_id)
@@ -222,6 +294,42 @@ int32_t motor_get_actual_speed_percent(uint8_t motor_id)
     return motor_pid[(uint8_t)(motor_id - MOTOR_ID_A)].actual_speed_percent;
 }
 
+/** 返回带方向的目标输出轴转速，单位为0.1 rpm。 */
+int32_t motor_get_target_rpm_x10(uint8_t motor_id)
+{
+    if ((motor_id != MOTOR_ID_A) && (motor_id != MOTOR_ID_B)) {
+        return 0;
+    }
+    return motor_target_rpm_x10[(uint8_t)(motor_id - MOTOR_ID_A)];
+}
+
+/** 返回最近50 ms编码器计数换算出的输出轴转速，单位为0.1 rpm。 */
+int32_t motor_get_actual_rpm_x10(uint8_t motor_id)
+{
+    if ((motor_id != MOTOR_ID_A) && (motor_id != MOTOR_ID_B)) {
+        return 0;
+    }
+    return motor_pid[(uint8_t)(motor_id - MOTOR_ID_A)].actual_rpm_x10;
+}
+
+/** 返回目标轮胎理论线速度，单位0.1 mm/s。 */
+int32_t motor_get_target_mmps_x10(uint8_t motor_id)
+{
+    int32_t rpm_x10 = motor_get_target_rpm_x10(motor_id);
+
+    return (int32_t)(((int64_t)rpm_x10 * MOTOR_PI_X10000 *
+        MOTOR_WHEEL_DIAMETER_MM) / (60L * 10000L));
+}
+
+/** 返回编码器测得的轮胎理论线速度，单位0.1 mm/s。 */
+int32_t motor_get_actual_mmps_x10(uint8_t motor_id)
+{
+    int32_t rpm_x10 = motor_get_actual_rpm_x10(motor_id);
+
+    return (int32_t)(((int64_t)rpm_x10 * MOTOR_PI_X10000 *
+        MOTOR_WHEEL_DIAMETER_MM) / (60L * 10000L));
+}
+
 void motor_stop(uint8_t motor_id)
 {
     uint8_t index;
@@ -230,50 +338,59 @@ void motor_stop(uint8_t motor_id)
     }
     index = (uint8_t)(motor_id - MOTOR_ID_A);
     motor_target_percent[index] = 0;
+    motor_target_rpm_x10[index] = 0;
     motor_pid[index].previous_error = 0;
     motor_pid[index].last_error = 0;
     motor_pid[index].actual_speed_percent = 0;
+    motor_pid[index].actual_rpm_x10 = 0;
     motor_pid[index].duty = 0U;
     motor_set_duty(motor_id, 0U);
     motor_set_direction(motor_id, MOTOR_DIRECTION_BRAKE);
 }
 
-/**
- * 根据目标百分比和实际脉冲计算一次 PID 输出。
- * 输出 = 百分比基础 PWM + P项 + I项 + D项。
- */
-/** Convert one PID period's pulse count to speed percent without clamping. */
-static int32_t motor_calculate_speed_percent(int32_t pulses)
+/** 把一个采样周期的A相上升沿计数换算为输出轴转速，单位0.1 rpm。 */
+static int32_t motor_calculate_rpm_x10(int32_t pulses)
 {
-    /* Do not clamp feedback: overspeed must remain visible to the PID error. */
-    return (pulses * 100L) / MOTOR_FULLSPEED_PULSES_PER_50MS;
+    const int32_t denominator =
+        MOTOR_COUNTS_PER_OUTPUT_REV * MOTOR_SPEED_SAMPLE_MS;
+
+    return (pulses * 60000L * MOTOR_RPM_SCALE + denominator / 2L) /
+        denominator;
 }
 
 /**
- * Incremental PID based on the supplied one-motor incremental PI example.
- * D uses the second error difference required by an incremental controller.
+ * 增量式RPM PID。D项使用两拍误差差分，当前默认KD为0。
  */
 static uint32_t motor_pid_update(
-    uint8_t index, int16_t target_percent, int32_t actual_pulses)
+    uint8_t index, int32_t signed_target_rpm_x10, int32_t actual_pulses)
 {
-    const int32_t magnitude =
-        target_percent < 0 ? -target_percent : target_percent;
-    const int32_t target_speed_percent = magnitude;
-    const int32_t actual_speed_percent =
-        motor_calculate_speed_percent(actual_pulses);
-    const int32_t error = target_speed_percent - actual_speed_percent;
-    const int32_t duty_increment =
-        (motor_pid_kp * (error - motor_pid[index].last_error) +
-         motor_pid_ki * error +
-         motor_pid_kd * (error - 2L * motor_pid[index].last_error +
-             motor_pid[index].previous_error)) / MOTOR_PID_GAIN_SCALE;
+    const int32_t target_rpm_x10 = signed_target_rpm_x10 < 0
+        ? -signed_target_rpm_x10 : signed_target_rpm_x10;
+    const int32_t actual_rpm_x10 = motor_calculate_rpm_x10(actual_pulses);
+    const int32_t error = target_rpm_x10 - actual_rpm_x10;
+    const int64_t gain_sum =
+        (int64_t)motor_pid_kp * (error - motor_pid[index].last_error) +
+        (int64_t)motor_pid_ki * error +
+        (int64_t)motor_pid_kd *
+            (error - 2L * motor_pid[index].last_error +
+             motor_pid[index].previous_error);
+    const int32_t duty_increment = (int32_t)(
+        (gain_sum * MOTOR_PWM_PERIOD_COUNTS) /
+        (MOTOR_PID_GAIN_SCALE * 100L * MOTOR_RPM_SCALE));
+    const int32_t target_percent = motor_target_percent[index] < 0
+        ? -motor_target_percent[index] : motor_target_percent[index];
     const uint32_t max_target_duty =
-        motor_max_duty_for_target(magnitude);
+        motor_max_duty_for_target(target_percent);
     int32_t output = (int32_t)motor_pid[index].duty + duty_increment;
 
     motor_pid[index].previous_error = motor_pid[index].last_error;
     motor_pid[index].last_error = error;
-    motor_pid[index].actual_speed_percent = actual_speed_percent;
+    motor_pid[index].actual_rpm_x10 = signed_target_rpm_x10 < 0
+        ? -actual_rpm_x10 : actual_rpm_x10;
+    /* 百分比仅用于兼容显示，不参与编码器速度换算或PID误差。 */
+    motor_pid[index].actual_speed_percent =
+        (motor_pid[index].actual_rpm_x10 * 100L) /
+        (MOTOR_MAX_OUTPUT_RPM * MOTOR_RPM_SCALE);
     if (output < 0) {
         output = 0;
     } else if (output > (int32_t)max_target_duty) {
@@ -291,13 +408,13 @@ void MOTOR_PID_INST_IRQHandler(void)
         return;
     }
     for (index = 0U; index < 2U; index++) {
-        const int16_t target = motor_target_percent[index];
+        const int32_t target_rpm_x10 = motor_target_rpm_x10[index];
         const int32_t actual_pulses = Encoder_Get_Count(index);
 
-        if (target == 0) {
+        if (target_rpm_x10 == 0) {
             continue;
         }
         motor_set_duty((uint8_t)(index + MOTOR_ID_A),
-            motor_pid_update(index, target, actual_pulses));
+            motor_pid_update(index, target_rpm_x10, actual_pulses));
     }
 }

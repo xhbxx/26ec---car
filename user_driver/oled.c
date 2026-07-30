@@ -99,6 +99,60 @@ void OLED_WR_Byte(uint8_t dat, uint8_t mode)
     }
 }
 
+/**
+ * @brief 连续发送1~7个显示数据字节，减少整屏刷新时的I2C起停次数。
+ */
+static void OLED_WR_DataBlock(const uint8_t *data, uint8_t length)
+{
+    uint8_t txData[8];
+    uint8_t index;
+    uint32_t timeout;
+    uint32_t status;
+
+    if ((g_oled_i2c_failed != 0U) || (data == 0) ||
+        (length == 0U) || (length > 7U)) {
+        return;
+    }
+
+    txData[0] = 0x40U;
+    for (index = 0U; index < length; index++) {
+        txData[index + 1U] = data[index];
+    }
+
+    timeout = OLED_I2C_TIMEOUT_LOOPS;
+    while ((DL_I2C_getControllerStatus(OLED_INST) &
+            DL_I2C_CONTROLLER_STATUS_IDLE) == 0U) {
+        if (--timeout == 0U) {
+            g_oled_i2c_failed = 1U;
+            return;
+        }
+    }
+
+    DL_I2C_fillControllerTXFIFO(OLED_INST, txData, (uint32_t)length + 1U);
+    DL_I2C_startControllerTransfer(OLED_INST, 0x3CU,
+        DL_I2C_CONTROLLER_DIRECTION_TX, (uint32_t)length + 1U);
+    delay_cycles(8U);
+
+    timeout = OLED_I2C_TIMEOUT_LOOPS;
+    do {
+        status = DL_I2C_getControllerStatus(OLED_INST);
+        if ((status & DL_I2C_CONTROLLER_STATUS_ERROR) != 0U) {
+            break;
+        }
+        if (--timeout == 0U) {
+            break;
+        }
+    } while ((status & DL_I2C_CONTROLLER_STATUS_BUSY) != 0U);
+
+    if ((timeout == 0U) ||
+        ((DL_I2C_getControllerStatus(OLED_INST) &
+          DL_I2C_CONTROLLER_STATUS_ERROR) != 0U)) {
+        DL_I2C_resetControllerTransfer(OLED_INST);
+        DL_I2C_flushControllerTXFIFO(OLED_INST);
+        g_oled_i2c_failed = 1U;
+    }
+}
+
 //开启OLED显示 
 void OLED_DisPlay_On(void)
 {
@@ -118,14 +172,27 @@ void OLED_DisPlay_Off(void)
 //更新显存到OLED	
 void OLED_Refresh(void)
 {
-	u8 i,n;
-	for(i=0;i<8;i++)
-	{
-	   OLED_WR_Byte(0xb0+i,OLED_CMD); //设置行起始地址
-	   OLED_WR_Byte(0x00,OLED_CMD);   //设置低列起始地址
-	   OLED_WR_Byte(0x10,OLED_CMD);   //设置高列起始地址
-	   for(n=0;n<128;n++)
-		 OLED_WR_Byte(OLED_GRAM[n][i],OLED_DATA);
+	u8 page;
+	u8 column;
+	u8 block_length;
+	u8 block[7];
+	u8 index;
+
+	for (page = 0U; page < 8U; page++) {
+		OLED_WR_Byte((uint8_t)(0xB0U + page), OLED_CMD);
+		OLED_WR_Byte(0x00U, OLED_CMD);
+		OLED_WR_Byte(0x10U, OLED_CMD);
+
+		for (column = 0U; column < 128U; column += block_length) {
+			block_length = (uint8_t)(128U - column);
+			if (block_length > 7U) {
+				block_length = 7U;
+			}
+			for (index = 0U; index < block_length; index++) {
+				block[index] = OLED_GRAM[column + index][page];
+			}
+			OLED_WR_DataBlock(block, block_length);
+		}
 	}
 }
 
@@ -334,36 +401,40 @@ void OLED_ShowPicture(u8 x0,u8 y0,u8 x1,u8 y1,u8 BMP[])
 //OLED的初始化
 void OLED_Init(void)
 {
-	// 4针OLED没有RST引脚，直接延时等待屏幕内部RC电路上电复位完成
-	delay_ms(100);
-	
-	OLED_WR_Byte(0xAE,OLED_CMD);//--turn off oled panel
-	OLED_WR_Byte(0x00,OLED_CMD);//---set low column address
-	OLED_WR_Byte(0x10,OLED_CMD);//---set high column address
-	OLED_WR_Byte(0x40,OLED_CMD);//--set start line address  Set Mapping RAM Display Start Line (0x00~0x3F)
-	OLED_WR_Byte(0x81,OLED_CMD);//--set contrast control register
-	OLED_WR_Byte(0xCF,OLED_CMD);// Set SEG Output Current Brightness
-	OLED_WR_Byte(0xA1,OLED_CMD);//--Set SEG/Column Mapping     0xa0左右反置 0xa1正常
-	OLED_WR_Byte(0xC8,OLED_CMD);//Set COM/Row Scan Direction   0xc0上下反置 0xc8正常
-	OLED_WR_Byte(0xA6,OLED_CMD);//--set normal display
-	OLED_WR_Byte(0xA8,OLED_CMD);//--set multiplex ratio(1 to 64)
-	OLED_WR_Byte(0x3f,OLED_CMD);//--1/64 duty
-	OLED_WR_Byte(0xD3,OLED_CMD);//-set display offset	Shift Mapping RAM Counter (0x00~0x3F)
-	OLED_WR_Byte(0x00,OLED_CMD);//-not offset
-	OLED_WR_Byte(0xd5,OLED_CMD);//--set display clock divide ratio/oscillator frequency
-	OLED_WR_Byte(0x80,OLED_CMD);//--set divide ratio, Set Clock as 100 Frames/Sec
-	OLED_WR_Byte(0xD9,OLED_CMD);//--set pre-charge period
-	OLED_WR_Byte(0xF1,OLED_CMD);//Set Pre-Charge as 15 Clocks & Discharge as 1 Clock
-	OLED_WR_Byte(0xDA,OLED_CMD);//--set com pins hardware configuration
-	OLED_WR_Byte(0x12,OLED_CMD);
-	OLED_WR_Byte(0xDB,OLED_CMD);//--set vcomh
-	OLED_WR_Byte(0x40,OLED_CMD);//Set VCOM Deselect Level
-	OLED_WR_Byte(0x20,OLED_CMD);//-Set Page Addressing Mode (0x00/0x01/0x02)
-	OLED_WR_Byte(0x02,OLED_CMD);//
-	OLED_WR_Byte(0x8D,OLED_CMD);//--set Charge Pump enable/disable
-	OLED_WR_Byte(0x14,OLED_CMD);//--set(0x10) disable
-	OLED_WR_Byte(0xA4,OLED_CMD);// Disable Entire Display On (0xa4/0xa5)
-	OLED_WR_Byte(0xA6,OLED_CMD);// Disable Inverse Display On (0xa6/a7) 
-	OLED_WR_Byte(0xAF,OLED_CMD);
-	OLED_Clear();
+	static const uint8_t init_commands[] = {
+		0xAE, 0x00, 0x10, 0x40, 0x81, 0xCF, 0xA1, 0xC8,
+		0xA6, 0xA8, 0x3F, 0xD3, 0x00, 0xD5, 0x80, 0xD9,
+		0xF1, 0xDA, 0x12, 0xDB, 0x40, 0x20, 0x02, 0x8D,
+		0x14, 0xA4, 0xA6, 0xAF
+	};
+	uint8_t attempt;
+	uint8_t index;
+
+	/* 四针 OLED 没有复位脚，先等待内部电源复位完成。 */
+	delay_ms(100U);
+
+	/* 初始化失败时恢复 I2C 并重试，避免一次错误永久关闭显示。 */
+	for (attempt = 0U; attempt < 3U; attempt++) {
+		g_oled_i2c_failed = 0U;
+		DL_I2C_resetControllerTransfer(OLED_INST);
+		DL_I2C_flushControllerTXFIFO(OLED_INST);
+		delay_ms(20U);
+
+		for (index = 0U;
+		     index < (uint8_t)sizeof(init_commands);
+		     index++) {
+			OLED_WR_Byte(init_commands[index], OLED_CMD);
+			if (g_oled_i2c_failed != 0U) {
+				break;
+			}
+		}
+
+		if (g_oled_i2c_failed == 0U) {
+			OLED_Clear();
+			if (g_oled_i2c_failed == 0U) {
+				return;
+			}
+		}
+		delay_ms(50U);
+	}
 }

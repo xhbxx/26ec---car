@@ -90,6 +90,9 @@
                             </tool>
                         </toolChain>
                     </folderInfo>
+                    <sourceEntries>
+                        <entry excluding="user_driver/Emm_V5_status.c|user_driver/atk_ms6dsv.c|user_driver/encoder.c|user_driver/grayscale_sensor.c|user_driver/key.c|user_driver/line_tracking.c|user_driver/motor.c|user_driver/uart_io.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+                    </sourceEntries>
                 </configuration>
             </storageModule>
             <storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>

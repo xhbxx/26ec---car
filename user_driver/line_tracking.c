@@ -1,7 +1,7 @@
 #include "line_tracking.h"
 
+#include "atk_ms6dsv.h"
 #include "grayscale_sensor.h"
-#include "mpu6050.h"
 #include "motor.h"
 
 /* 0~7 路探头从左到右对应的位置权重。 */
@@ -11,79 +11,50 @@ static const int16_t tracking_weights[GRAYSCALE_SENSOR_CHANNELS] = {
 
 static int32_t gyro_bias_sum = 0;
 static uint16_t gyro_calibration_count = 0U;
-static int16_t gyro_raw = 0;
 static int16_t gyro_bias = 0;
-static int16_t gyro_error = 0;
-static int16_t gyro_correction = 0;
 static uint8_t gyro_ready = 0U;
+/* 1: left deviation, -1: right deviation, 0: no correction. */
+static int8_t gyro_direction = 0;
 
-/** Update GY-6500 zero bias; return 1 only after stationary calibration. */
+/** 更新 ATK-MS6DSV 零偏，静止校准完成后才返回 1。 */
 static uint8_t tracking_update_gyro(void)
 {
-    MPU6050_RawData data;
+    ATK_MS6DSV_RawData data;
     int32_t corrected;
 
-    if (MPU6050_GetStatus() != 1U) {
-        gyro_error = 0;
-        gyro_correction = 0;
+    if (ATK_MS6DSV_GetStatus() != 1U) {
+        gyro_direction = 0;
         return gyro_ready;
     }
 
-    MPU6050_GetRawData(&data);
-    gyro_raw = data.gyro_z;
+    ATK_MS6DSV_GetRawData(&data);
     if (gyro_ready == 0U) {
-        gyro_bias_sum += gyro_raw;
+        gyro_bias_sum += data.gyro_z;
         gyro_calibration_count++;
         if (gyro_calibration_count >= TRACK_GYRO_CALIBRATION_SAMPLES) {
             gyro_bias = (int16_t)(gyro_bias_sum /
                 (int32_t)TRACK_GYRO_CALIBRATION_SAMPLES);
             gyro_ready = 1U;
         }
-        gyro_error = 0;
-        gyro_correction = 0;
+        gyro_direction = 0;
         return gyro_ready;
     }
 
-    corrected = (int32_t)gyro_raw - gyro_bias;
+    corrected = (int32_t)data.gyro_z - gyro_bias;
     if ((corrected <= TRACK_GYRO_DEADBAND_RAW) &&
         (corrected >= -TRACK_GYRO_DEADBAND_RAW)) {
-        corrected = 0;
+        gyro_direction = 0;
+    } else if (corrected >= TRACK_GYRO_DEADBAND_RAW) {
+        gyro_direction = 1;
+    } else if(corrected <= -TRACK_GYRO_DEADBAND_RAW) {
+        gyro_direction = -1;
     }
-    gyro_error = (int16_t)corrected;
-    corrected = (corrected * TRACK_GYRO_CORRECTION_SIGN) /
-        TRACK_GYRO_RAW_PER_PERCENT;
-    if (corrected > TRACK_GYRO_MAX_CORRECTION_PERCENT) {
-        corrected = TRACK_GYRO_MAX_CORRECTION_PERCENT;
-    } else if (corrected < -TRACK_GYRO_MAX_CORRECTION_PERCENT) {
-        corrected = -TRACK_GYRO_MAX_CORRECTION_PERCENT;
-    }
-    gyro_correction = (int16_t)corrected;
     return 1U;
 }
 
-int16_t Line_Tracking_GetGyroRaw(void)
+int8_t Line_Tracking_GetGyroDirection(void)
 {
-    return gyro_raw;
-}
-
-int16_t Line_Tracking_GetGyroBias(void)
-{
-    return gyro_bias;
-}
-
-int16_t Line_Tracking_GetGyroError(void)
-{
-    return gyro_error;
-}
-
-int16_t Line_Tracking_GetGyroCorrection(void)
-{
-    return gyro_correction;
-}
-
-uint8_t Line_Tracking_IsGyroReady(void)
-{
-    return gyro_ready;
+    return gyro_direction;
 }
 
 /** 对左右目标速度限幅后，直接送入现有两路电机调速函数。 */
@@ -131,17 +102,23 @@ uint8_t Line_Tracking_Update(
     }
 
     /* 传感器在线时先静止校准零偏，防止固定零偏令小车持续转圈。 */
-    if ((MPU6050_IsOnline() != 0U) && (gyro_is_ready == 0U)) {
+    if ((ATK_MS6DSV_IsOnline() != 0U) && (gyro_is_ready == 0U)) {
         motor_stop(MOTOR_ID_A);
         motor_stop(MOTOR_ID_B);
         return active_count;
     }
 
-    /* 丢线时使用校正后的Z轴角速度抑制转动；离线则两轮同速。 */
-    if (active_count == 0U) {
-        tracking_apply_motor_targets(
-            TRACK_REFERENCE_BASE_PERCENT + gyro_correction,
-            TRACK_REFERENCE_BASE_PERCENT - gyro_correction);
+    /* 丢线或全亮时只给偏转侧增加固定速度，另一侧保持基础速度。 */
+    if (active_count == 0U||active_count==8) {
+        int16_t left_target = TRACK_REFERENCE_BASE_PERCENT;
+        int16_t right_target = TRACK_REFERENCE_BASE_PERCENT;
+
+        if (gyro_direction > 0) {
+            left_target += TRACK_GYRO_SINGLE_WHEEL_BOOST_PERCENT;
+        } else if (gyro_direction <0) {
+            right_target += TRACK_GYRO_SINGLE_WHEEL_BOOST_PERCENT;
+        }
+        tracking_apply_motor_targets(left_target, right_target);
         return active_count;
     }
 
