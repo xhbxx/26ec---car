@@ -6,6 +6,8 @@
 void UART_send_string(UART_Regs *uart, const char *str);
 void UART_send_char(UART_Regs *uart, const uint8_t chr);
 uint8_t Serial1_SendArrayTry(const uint8_t *data, uint16_t length);
+/** 读取电机UART0/PA31收到的一个字节；无数据返回0。 */
+uint8_t Motor_UART_ReadByte(uint8_t *value);
 uint8_t UART_read_received_byte(uint8_t *value);
 uint16_t UART_get_rx_overflow_count(void);
 

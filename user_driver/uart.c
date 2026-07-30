@@ -20,18 +20,24 @@ void UART_send_string(UART_Regs *uart, const char *str)
     }
 }
 
-/** 从中断接收缓冲区读取一个字节；无数据返回0，成功返回1。 */
+/** 从CAM2数据串口UART2/PA22读取一个字节；无数据返回0。 */
 uint8_t UART_read_received_byte(uint8_t *value)
 {
     if (value == 0) {
         return 0U;
     }
 
-    /*
-     * 当前UART-OLED测试程序直接轮询硬件FIFO。
-     * 这样不依赖NVIC和RX中断阈值，适合先确认PA31是否真正收到数据。
-     */
+    /* CAM2接收采用轮询硬件FIFO，不依赖中断。 */
     return DL_UART_Main_receiveDataCheck(PRINT_INST, value) ? 1U : 0U;
+}
+
+/** 从Emm_V5电机反馈串口UART0/PA31读取一个字节；无数据返回0。 */
+uint8_t Motor_UART_ReadByte(uint8_t *value)
+{
+    if (value == 0) {
+        return 0U;
+    }
+    return DL_UART_Main_receiveDataCheck(MOTOR_UART_INST, value) ? 1U : 0U;
 }
 
 /**

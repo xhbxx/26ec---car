@@ -110,6 +110,9 @@ void Send_Byte(u8 dat);
  */
 void OLED_WR_Byte(u8 dat,u8 mode);
 
+/** 只刷新指定的一个8像素高页面，用于避免运行时整屏刷新长时间阻塞控制任务。 */
+void OLED_RefreshPage(u8 page);
+
 /**
  * @brief 打开 OLED 显示
  *

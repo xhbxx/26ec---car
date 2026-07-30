@@ -169,30 +169,39 @@ void OLED_DisPlay_Off(void)
 	OLED_WR_Byte(0xAF,OLED_CMD);//关闭屏幕
 }
 
-//更新显存到OLED	
-void OLED_Refresh(void)
+/** 只刷新一页，单次最多传输128字节，避免一次刷新整屏阻塞约100ms。 */
+void OLED_RefreshPage(u8 page)
 {
-	u8 page;
 	u8 column;
 	u8 block_length;
 	u8 block[7];
 	u8 index;
 
-	for (page = 0U; page < 8U; page++) {
-		OLED_WR_Byte((uint8_t)(0xB0U + page), OLED_CMD);
-		OLED_WR_Byte(0x00U, OLED_CMD);
-		OLED_WR_Byte(0x10U, OLED_CMD);
+	if (page >= 8U) {
+		return;
+	}
+	OLED_WR_Byte((uint8_t)(0xB0U + page), OLED_CMD);
+	OLED_WR_Byte(0x00U, OLED_CMD);
+	OLED_WR_Byte(0x10U, OLED_CMD);
 
-		for (column = 0U; column < 128U; column += block_length) {
-			block_length = (uint8_t)(128U - column);
-			if (block_length > 7U) {
-				block_length = 7U;
-			}
-			for (index = 0U; index < block_length; index++) {
-				block[index] = OLED_GRAM[column + index][page];
-			}
-			OLED_WR_DataBlock(block, block_length);
+	for (column = 0U; column < 128U; column += block_length) {
+		block_length = (uint8_t)(128U - column);
+		if (block_length > 7U) {
+			block_length = 7U;
 		}
+		for (index = 0U; index < block_length; index++) {
+			block[index] = OLED_GRAM[column + index][page];
+		}
+		OLED_WR_DataBlock(block, block_length);
+	}
+}
+
+//更新显存到OLED	
+void OLED_Refresh(void)
+{
+	u8 page;
+	for (page = 0U; page < 8U; page++) {
+		OLED_RefreshPage(page);
 	}
 }
 

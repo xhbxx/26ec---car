@@ -49,7 +49,8 @@ void PID_Reset(PID_TypeDef *pid)
     pid->initialized = 0U;
 }
 
-float PID_Update(PID_TypeDef *pid, float target, float feedback)
+float PID_UpdateConditional(PID_TypeDef *pid, float target, float feedback,
+    uint8_t integral_enabled)
 {
     float error;
     float raw_derivative;
@@ -59,8 +60,10 @@ float PID_Update(PID_TypeDef *pid, float target, float feedback)
     }
 
     error = target - feedback;
-    pid->integral += error * pid->dt;
-    pid->integral = PID_Limit(pid->integral, pid->integral_limit);
+    if (integral_enabled != 0U) {
+        pid->integral += error * pid->dt;
+        pid->integral = PID_Limit(pid->integral, pid->integral_limit);
+    }
 
     if (pid->initialized == 0U) {
         raw_derivative = 0.0f;
@@ -77,4 +80,22 @@ float PID_Update(PID_TypeDef *pid, float target, float feedback)
     pid->output = PID_Limit(pid->output, pid->max_output);
     pid->last_error = error;
     return pid->output;
+}
+
+float PID_Update(PID_TypeDef *pid, float target, float feedback)
+{
+    return PID_UpdateConditional(pid, target, feedback, 1U);
+}
+
+void PID_DecayIntegral(PID_TypeDef *pid, float factor)
+{
+    if (pid == 0) {
+        return;
+    }
+    if (factor < 0.0f) {
+        factor = 0.0f;
+    } else if (factor > 1.0f) {
+        factor = 1.0f;
+    }
+    pid->integral *= factor;
 }
