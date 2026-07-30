@@ -17,11 +17,16 @@
  * 速度比位置更容易过期：超过该时间没有新视觉速度样本，就不能继续用于
  * 位置预测和速度环，否则旧速度会让控制器误以为小球仍在运动。
  */
-#define SPEED_SAMPLE_STALE_MS          (120UL)
+#define SPEED_SAMPLE_STALE_MS          (200UL)
 #define OLED_UPDATE_PERIOD_MS          (250UL)
 #define MOTOR_FEEDBACK_QUERY_MS        (40UL)
+#define MOTOR_STARTUP_QUERY_MS         (20UL)
 #define MOTOR_COMMAND_PERIOD_MS        (40UL)
 #define MOTOR_FEEDBACK_TIMEOUT_MS      (200UL)
+/* 查询实时位置后最多等待15ms；该期间不能再发送位置控制命令。 */
+#define MOTOR_FEEDBACK_RESPONSE_WAIT_MS (15UL)
+#define MOTOR_ENABLE_SETTLE_MS         (120U)
+#define MOTOR_STOP_SETTLE_MS           (50U)
 /* PID只允许小角度运动，反馈相对启动零点超出该范围时视为异常帧。 */
 #define MOTOR_FEEDBACK_ANGLE_LIMIT_DEG (15.0f)
 
@@ -43,27 +48,53 @@
 #define POSITION_DEFAULT_TARGET        (250U)
 /* 旋钮每转动一格，目标位置增加或减少的数值。 */
 #define POSITION_TARGET_STEP           (1)
+
+/*
+ * 自动运行顺序：球从240附近出发，先向360运动；到达360后不停车，立即反向前往125。
+ * 允许惯性越过360，但370开始强制回拉，375为硬保护线。
+ */
+#define SEQUENCE_START_MIN             (235U)
+#define SEQUENCE_START_MAX             (245U)
+#define SEQUENCE_FIRST_TARGET          (360U)
+#define SEQUENCE_FINAL_TARGET          (125U)
+#define SEQUENCE_START_STABLE_CYCLES   (5U)
+#define SEQUENCE_FINAL_STABLE_CYCLES   (5U)
+#define SEQUENCE_FINAL_TOLERANCE       (3U)
+#define SEQUENCE_GUARD_POSITION        (370U)
+#define SEQUENCE_HARD_LIMIT_POSITION   (375U)
+#define SEQUENCE_GUARD_ANGLE_DEG       (-3.0f)
+#define SEQUENCE_HARD_GUARD_ANGLE_DEG  (-4.0f)
+#define SEQUENCE_REVERSE_SLEW_DEG      (0.80f)
 /* 位置死区：|目标位置-当前位置|不超过该值时，目标速度置零，防止目标附近来回动作。 */
 /* 只在非常接近目标时锁定；误差超过2立即恢复缓慢调整。 */
 #define POSITION_DEADBAND              (1.0f)
 #define POSITION_DEADBAND_EXIT         (2.0f)
 /* 只有球速足够低并进入±1时才判定到达，防止高速穿过目标时过早停止控制。 */
 #define POSITION_LOCK_SPEED            (2.0f)
-/* 视觉计算速度在静止时仍有约±10噪声，该范围在控制计算中按0处理。 */
-#define SPEED_ZERO_DEADBAND             (10.0f)
-/* 根据当前速度预测约0.1秒后的球位置，用于在到达目标前提前制动。 */
-#define POSITION_LOOKAHEAD_S            (0.1f)
-/* 进入该距离后限制目标速度，使靠近目标阶段保持缓慢调整。 */
-#define POSITION_SLOW_ZONE             (80.0f)
-#define POSITION_NEAR_MIN_SPEED        (1.5f)
-#define POSITION_NEAR_SPEED_SLOPE      (0.15f)
+/* 实测静止CS为0，只保留很小的速度噪声区，避免把真实慢速微调误判为静止。 */
+#define SPEED_ZERO_DEADBAND             (3.0f)
+/*
+ * 位置PID只反馈实际位置；速度阻尼作为独立修正项叠加到外环输出。
+ * 原预测反馈等效阻尼约为POSITION_KP*0.1=0.03，当前只保留很小的0.008阻尼。
+ */
+#define POSITION_SPEED_DAMPING_GAIN    (0.040f)
+/*
+ * 远距离控制：运动时适度放大PID角度；静止时保证管角超过实测静摩擦阈值。
+ * 最低角只在球静止时使用，检测到运动后立即恢复速度闭环输出。
+ */
+#define POSITION_FAR_ZONE              (20.0f) /* |T-C|大于50进入强驱动区 */
+#define PIPE_FAR_ANGLE_GAIN            (1.60f) /* 远距离运动中放大速度环角度 */
+#define PIPE_FAR_POSITIVE_MIN_DEG      (3.80f) /* 远距离静止时正方向最低启动角 */
+#define PIPE_FAR_NEGATIVE_MIN_DEG      (3.40f) /* 远距离静止时负方向最低启动角 */
+/* 未到目标但球已静止、target_speed又接近0时使用的小恢复速度。 */
+#define POSITION_RECOVERY_MIN_SPEED    (16.0f)
 /* 每20ms允许目标速度改变的最大值，避免进入死区时从PID输出硬切到0。 */
-#define TARGET_SPEED_SLEW_PER_CYCLE    (2.0f)
+#define TARGET_SPEED_SLEW_PER_CYCLE    (3.0f)
 /*
  * 制动时允许目标速度更快地减小或反向。
  * 这不是提高正常追踪速度，而是缩短“球已经有惯性、控制器却还在慢慢撤销旧速度”的时间。
  */
-#define TARGET_SPEED_BRAKE_SLEW        (4.0f)
+#define TARGET_SPEED_BRAKE_SLEW        (7.0f)
 /* 进入位置死区后每20ms回零的最大速度变化量，专门消除setpoint硬切阶跃。 */
 #define TARGET_SPEED_STOP_SLEW         (0.75f)
 
@@ -72,13 +103,13 @@
  * 调参时先令 POSITION_KI=0，调整 KP、KD，最后再少量增加 KI。
  */
 /* 位置比例系数：误差越大，要求的目标速度越大；过大会过冲和来回摆动，过小则响应慢。 */
-#define POSITION_KP                    (0.30f)
+#define POSITION_KP                    (1.20f)
 /* 位置积分系数：消除长期位置偏差；过大会积分累积并导致明显过冲，通常只使用很小数值。 */
-#define POSITION_KI                    (0.00f)
+#define POSITION_KI                    (0.020f)
 /* 位置微分系数：根据误差变化提前减速、增加阻尼；过大会放大位置噪声并造成电机抖动。 */
 #define POSITION_KD                    (0.00f)
 /* 位置外环最大输出，即 target_speed 的绝对值上限；越大允许小球移动得越快，也越容易冲过目标。 */
-#define POSITION_MAX_SPEED             (40.0f)
+#define POSITION_MAX_SPEED             (70.0f)
 /* 位置环积分累计上限，用于防止长时间大误差造成积分饱和；不是速度或角度上限。 */
 #define POSITION_INTEGRAL_LIMIT        (400.0f)
 
@@ -87,42 +118,44 @@
  * 它决定水管需要倾斜多少来使小球速度跟随位置外环的要求。
  */
 /* 速度比例系数：速度误差对应的即时倾角；增大可提高动作幅度，过大会造成速度震荡。 */
-#define SPEED_KP                       (0.040f)
+#define SPEED_KP                       (0.075f)
 /* 速度积分系数：补偿摩擦、坡度等造成的长期速度不足；过大会持续加大倾角并导致过冲。 */
-#define SPEED_KI                       (0.00f)
+#define SPEED_KI                       (0.02f)
 /* 速度微分系数：抑制速度突然变化；速度反馈噪声较大，因此通常只能使用很小数值。 */
 #define SPEED_KD                       (0.00f)
 /* 速度内环最终输出的机械管角上限，单位为度；同时限制正、负两个方向为 ±该数值。 */
-#define PIPE_MAX_ANGLE_DEG             (4.0f)
+#define PIPE_MAX_ANGLE_DEG             (6.0f)
 /*
  * 负管角方向的机构力度补偿：1.0表示不补偿，数值越大，靠近500一侧的回拉幅度越大。
  * 补偿后的角度仍会被 PIPE_MAX_ANGLE_DEG 限制，不会突破机械角度上限。
  */
-#define PIPE_NEGATIVE_ANGLE_GAIN       (0.75f)
+#define PIPE_NEGATIVE_ANGLE_GAIN       (1.00f)
 /* 往0方向使用负管角，单独限制该方向的最大幅度，避免下降方向动作过大。 */
-#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (3.0f)
+#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (6.0f)
 /* 靠近目标时分方向限制管角；正方向需要更强制动力，负方向保持原限制。 */
-#define PIPE_NEAR_ZONE                 (60.0f)
-#define PIPE_NEAR_POSITIVE_MAX_DEG     (1.8f)
-#define PIPE_NEAR_NEGATIVE_MAX_DEG     (1.2f)
+#define PIPE_NEAR_ZONE                 (25.0f)
+#define PIPE_NEAR_POSITIVE_MAX_DEG     (3.00f)
+#define PIPE_NEAR_NEGATIVE_MAX_DEG     (2.80f)
 /*
- * 实测静摩擦不对称：往500方向约1°才能可靠启动，往0方向约0.7°。
+ * 实测静摩擦不对称：往500方向约1°才能可靠启动，新的零点下往0方向需超过1.02°。
  * 两个数值只在球静止且仍在目标外时使用，运动后立即交回速度PID。
  */
-#define PIPE_RESTART_POSITIVE_DEG      (0.85f)
-#define PIPE_RESTART_NEGATIVE_DEG      (1.20f)
+#define PIPE_RESTART_POSITIVE_DEG      (1.50f)
+#define PIPE_RESTART_NEGATIVE_DEG      (1.40f)
 /* 每20ms允许管角目标改变的最大角度，限制电机和水管的瞬时动作。 */
-#define PIPE_ANGLE_SLEW_PER_CYCLE      (0.15f)
+#define PIPE_ANGLE_SLEW_PER_CYCLE      (0.80f)
+/* 减小旧角度或反向制动时允许更快变化，避免水管几百毫秒后才建立制动力。 */
+#define PIPE_ANGLE_BRAKE_SLEW          (0.90f)
 /* 死区内速度低于该值时认为小球基本静止，管角平滑回到机械零角。 */
 #define BALL_STOP_SPEED_THRESHOLD      (2.0f)
 /* 死区内每周期保留的积分比例，逐渐卸掉旧方向积分而不是瞬间清零。 */
 #define PID_INTEGRAL_DECAY             (0.90f)
 /* 速度环积分累计上限，防止小球长期不动时积分不断增加并突然产生过大倾角。 */
-#define SPEED_INTEGRAL_LIMIT           (120.0f)
+#define SPEED_INTEGRAL_LIMIT           (180.0f)
 /* 速度一阶低通系数：越大越跟手但噪声越明显，越小越平滑但速度反馈延迟越大，范围0~1。 */
-#define SPEED_FILTER_ALPHA             (0.20f)
+#define SPEED_FILTER_ALPHA             (0.25f)
 /* 两个 PID 共用的微分低通系数：越大越灵敏，越小越平滑，范围0~1。 */
-#define PID_DERIVATIVE_ALPHA           (0.15f)
+#define PID_DERIVATIVE_ALPHA           (0.3f)
 
 #define EMM_ADDRESS                    (1U)
 #define EMM_MOVE_SPEED_RPM             (30U)
@@ -136,6 +169,14 @@
 #define FRAME_SOF_1                    (0xAAU)
 #define FRAME_SOF_2                    (0x55U)
 #define FRAME_VERSION                  (0x01U)
+
+typedef enum
+{
+    BALL_SEQUENCE_WAIT_START = 0,
+    BALL_SEQUENCE_TO_360,
+    BALL_SEQUENCE_TO_125,
+    BALL_SEQUENCE_HOLD_125
+} BallSequenceState;
 
 volatile uint16_t current_position = 0U;
 volatile uint16_t target_position = POSITION_DEFAULT_TARGET;
@@ -154,13 +195,17 @@ static uint32_t g_last_encoder_ms = 0U;
 static uint16_t g_last_position = 0U;
 static uint32_t g_last_position_sample_ms = 0U;
 static uint8_t g_speed_sample_initialized = 0U;
+/* 只有连续两帧形成可靠差分后才置1；超时后立即清零并重新建立采样基准。 */
+static uint8_t g_speed_valid = 0U;
 static float g_motor_requested_angle = 0.0f;
 static float g_motor_actual_angle = 0.0f;
 static float g_motor_zero_absolute_angle = 0.0f;
 static uint32_t g_last_motor_feedback_ms = 0U;
 static uint32_t g_last_motor_query_ms = 0U;
 static uint32_t g_last_motor_command_ms = 0U;
+static uint32_t g_motor_query_sent_ms = 0U;
 static uint8_t g_motor_feedback_valid = 0U;
+static uint8_t g_motor_feedback_query_pending = 0U;
 static uint8_t g_motor_zero_captured = 0U;
 static uint8_t g_motor_rx_frame[8];
 static uint8_t g_motor_rx_index = 0U;
@@ -171,6 +216,11 @@ static uint8_t g_position_valid = 0U;
 static uint8_t g_motor_stopped = 1U;
 static uint8_t g_position_locked = 0U;
 static uint16_t g_position_lock_target = 0U;
+static BallSequenceState g_sequence_state = BALL_SEQUENCE_WAIT_START;
+static uint8_t g_sequence_stable_cycles = 0U;
+static uint32_t g_sequence_last_frame_count = 0U;
+/* 旋钮按键产生一次启动请求，由20 ms状态机消费。 */
+static uint8_t g_sequence_start_requested = 0U;
 
 /* [llm-pid-tuner] SETPOINT 文本指令接收状态。 */
 static char g_llm_command[20];
@@ -251,6 +301,7 @@ static uint8_t Sensor_PushByte(uint8_t value)
         g_last_position_sample_ms = now;
         current_speed = 0.0f;
         g_speed_sample_initialized = 1U;
+        g_speed_valid = 0U;
     } else {
         uint32_t elapsed_ms = (uint32_t)(now - g_last_position_sample_ms);
 
@@ -261,11 +312,13 @@ static uint8_t Sensor_PushByte(uint8_t value)
                 (raw_speed - current_speed);
             g_last_position = position;
             g_last_position_sample_ms = now;
+            g_speed_valid = 1U;
         } else if (elapsed_ms > SENSOR_TIMEOUT_MS) {
             /* 间隔过长时旧速度已无意义，从当前帧重新建立差分基准。 */
             current_speed = 0.0f;
             g_last_position = position;
             g_last_position_sample_ms = now;
+            g_speed_valid = 0U;
         }
         /* elapsed_ms==0时保留旧基准，避免同一毫秒内处理积压帧而丢失总位移。 */
     }
@@ -279,19 +332,13 @@ static uint8_t Sensor_PushByte(uint8_t value)
 /** 使用旋钮在0~500内调整目标位置，按下旋钮恢复目标240。 */
 static void Target_PositionUpdate(void)
 {
-    int8_t rotation = Bianma_GetRotation();
-    int32_t updated = (int32_t)target_position +
-        (int32_t)rotation * POSITION_TARGET_STEP;
+    /* 自动流程不使用旋钮旋转调目标，只读取一次以清空累计旋转事件。 */
+    (void)Bianma_GetRotation();
 
-    if (updated < (int32_t)POSITION_MIN) {
-        updated = POSITION_MIN;
-    } else if (updated > (int32_t)POSITION_MAX) {
-        updated = POSITION_MAX;
-    }
-    target_position = (uint16_t)updated;
-
-    if (Bianma_Button_Pressed() != 0U) {
-        target_position = POSITION_DEFAULT_TARGET;
+    if ((g_sequence_state == BALL_SEQUENCE_WAIT_START) &&
+        ((Bianma_Button_Pressed() != 0U) ||
+         (Bianma_Button_IsPressed() != 0U))) {
+        g_sequence_start_requested = 1U;
     }
 }
 
@@ -377,6 +424,8 @@ static void Motor_PushFeedbackByte(uint8_t value)
     g_motor_actual_angle = relative_angle;
     g_last_motor_feedback_ms = g_milliseconds;
     g_motor_feedback_valid = 1U;
+    /* 已收到本次查询的完整有效位置帧，允许之后再发送运动命令。 */
+    g_motor_feedback_query_pending = 0U;
 }
 
 /**
@@ -386,6 +435,7 @@ static void Motor_PushFeedbackByte(uint8_t value)
 static void Motor_ControlService(uint32_t now)
 {
     uint8_t received;
+    uint32_t query_period_ms;
 
     while (Motor_UART_ReadByte(&received) != 0U) {
         Motor_PushFeedbackByte(received);
@@ -397,11 +447,29 @@ static void Motor_ControlService(uint32_t now)
         g_motor_feedback_valid = 0U;
     }
 
-    if (((uint32_t)(now - g_last_motor_query_ms) >=
-         MOTOR_FEEDBACK_QUERY_MS) &&
+    /*
+     * 查询命令与位置控制命令共用UART0。查询发出后必须先等回复或超时，
+     * 否则电机的8字节位置回复会与紧接着发送的新命令交叉，造成M偶发丢失。
+     */
+    if (g_motor_feedback_query_pending != 0U) {
+        if ((uint32_t)(now - g_motor_query_sent_ms) <
+            MOTOR_FEEDBACK_RESPONSE_WAIT_MS) {
+            return;
+        }
+        /* 本次查询没有有效回复，解除等待，下一次周期可继续查询或发控制命令。 */
+        g_motor_feedback_query_pending = 0U;
+    }
+
+    /* 首帧尚未取得时更快重试；拿到机械零点后恢复40ms正常查询周期。 */
+    query_period_ms = (g_motor_zero_captured == 0U)
+        ? MOTOR_STARTUP_QUERY_MS : MOTOR_FEEDBACK_QUERY_MS;
+    if (((uint32_t)(now - g_last_motor_query_ms) >= query_period_ms) &&
         ((uint32_t)(now - g_last_motor_command_ms) >= 5U)) {
         g_last_motor_query_ms = now;
+        g_motor_query_sent_ms = now;
+        g_motor_feedback_query_pending = 1U;
         Emm_V5_Read_Sys_Params(EMM_ADDRESS, S_CPOS);
+        return;
     }
 
     if ((g_motor_feedback_valid == 0U) ||
@@ -482,7 +550,8 @@ static void LLM_UART_ParseSetpointByte(uint8_t received)
         }
     }
     if (valid != 0U) {
-        target_position = value;
+        /* 测试固定T时禁止UART SETPOINT修改目标：target_position = value; */
+        (void)value;
     }
 }
 
@@ -531,6 +600,10 @@ static void OLED_ShowControlInfo(void)
     OLED_ShowNum(48U, 0U, current_position, 3U, 12U);
     OLED_ShowString(72U, 0U,
         (u8 *)((g_position_valid != 0U) ? "V" : "X"), 12U);
+    OLED_ShowString(84U, 0U, (u8 *)"S:", 12U);
+    OLED_ShowNum(96U, 0U, (uint32_t)g_sequence_state, 1U, 12U);
+    OLED_ShowString(108U, 0U, (u8 *)"K:", 12U);
+    OLED_ShowNum(120U, 0U, (uint32_t)Bianma_Button_IsPressed(), 1U, 12U);
 
     OLED_ShowString(0U, 16U, (u8 *)"TS:", 12U);
     OLED_ShowSigned3(18U, 16U, target_speed);
@@ -566,6 +639,7 @@ static void Ball_ControlStop(void)
     pipe_angle = 0.0f;
     g_last_position = current_position;
     g_speed_sample_initialized = 0U;
+    g_speed_valid = 0U;
     g_position_valid = 0U;
     g_position_locked = 0U;
     /* 反馈丢失时保持当前机械角，不再继续追踪新的PID角度。 */
@@ -579,21 +653,98 @@ static void Ball_ControlStop(void)
 }
 
 /**
- * 固定20 ms执行位置外环和速度内环，并将目标管角交给已有电机驱动。
+ * 自动目标状态机，只负责切换现有双环PID的target_position，不另建控制链路。
+ * S0等待240附近稳定，S1前往360，S2立即反向前往125，S3在125附近保持。
  */
+/** 等待按键时保持T=250和机械零角，但不清掉位置反馈或UART接收状态。 */
+static void Ball_ControlIdle(void)
+{
+    PID_Reset(&g_position_pid);
+    PID_Reset(&g_speed_pid);
+    target_speed = 0.0f;
+    pipe_angle = 0.0f;
+    g_position_locked = 0U;
+    Motor_SetAngle(0.0f);
+}
+
+static void Ball_SequenceUpdate(void)
+{
+    float speed_abs = (current_speed < 0.0f)
+        ? -current_speed : current_speed;
+    uint8_t new_position_sample =
+        (valid_frame_count != g_sequence_last_frame_count) ? 1U : 0U;
+
+    if (new_position_sample != 0U) {
+        g_sequence_last_frame_count = valid_frame_count;
+    }
+
+    switch (g_sequence_state) {
+    case BALL_SEQUENCE_WAIT_START:
+        /* 等待阶段跟随当前位置，防止球尚未放到起点时水管主动倾斜。 */
+        target_position = POSITION_DEFAULT_TARGET;
+        if (g_sequence_start_requested != 0U) {
+            g_sequence_stable_cycles = 0U;
+            g_sequence_start_requested = 0U;
+            g_sequence_state = BALL_SEQUENCE_TO_360;
+            target_position = SEQUENCE_FIRST_TARGET;
+            PID_Reset(&g_position_pid);
+            PID_Reset(&g_speed_pid);
+            g_position_locked = 0U;
+        }
+        break;
+
+    case BALL_SEQUENCE_TO_360:
+        target_position = SEQUENCE_FIRST_TARGET;
+        if (current_position >= SEQUENCE_FIRST_TARGET) {
+            /* 到达360后直接反向；清除上一阶段的正向积分和目标速度。 */
+            g_sequence_state = BALL_SEQUENCE_TO_125;
+            target_position = SEQUENCE_FINAL_TARGET;
+            target_speed = 0.0f;
+            PID_Reset(&g_position_pid);
+            PID_Reset(&g_speed_pid);
+            g_position_locked = 0U;
+        }
+        break;
+
+    case BALL_SEQUENCE_TO_125:
+        target_position = SEQUENCE_FINAL_TARGET;
+        if ((new_position_sample != 0U) &&
+            (current_position >=
+             (SEQUENCE_FINAL_TARGET - SEQUENCE_FINAL_TOLERANCE)) &&
+            (current_position <=
+             (SEQUENCE_FINAL_TARGET + SEQUENCE_FINAL_TOLERANCE)) &&
+            (speed_abs <= POSITION_LOCK_SPEED)) {
+            if (++g_sequence_stable_cycles >=
+                SEQUENCE_FINAL_STABLE_CYCLES) {
+                g_sequence_stable_cycles = 0U;
+                g_sequence_state = BALL_SEQUENCE_HOLD_125;
+            }
+        } else if (new_position_sample != 0U) {
+            g_sequence_stable_cycles = 0U;
+        }
+        break;
+
+    case BALL_SEQUENCE_HOLD_125:
+    default:
+        /* 保持阶段仍使用原双环PID，受到扰动离开125后会自动微调回来。 */
+        target_position = SEQUENCE_FINAL_TARGET;
+        break;
+    }
+}
+
+/** 固定20 ms执行位置外环和速度内环，并将目标管角交给已有电机驱动。 */
 static void Ball_ControlUpdate(void)
 {
     float position_error = (float)target_position -
         (float)current_position;
-    float predicted_position;
     float desired_target_speed;
     float desired_pipe_angle;
     float change;
     float absolute_position_error;
     float absolute_current_speed;
     float control_speed;
-    float near_speed_limit;
     float target_speed_slew;
+    float pipe_angle_slew;
     uint32_t speed_sample_age_ms;
     uint8_t in_deadband;
 
@@ -607,6 +758,40 @@ static void Ball_ControlUpdate(void)
     if ((g_speed_sample_initialized != 0U) &&
         (speed_sample_age_ms > SPEED_SAMPLE_STALE_MS)) {
         current_speed = 0.0f;
+        g_speed_valid = 0U;
+        /* 下一帧只用于重建位置/时间基准，不能跨越丢帧区间直接计算速度。 */
+        g_speed_sample_initialized = 0U;
+    }
+
+    /*
+     * 速度反馈无效时不能把0当成真实速度继续运行速度环。但位置帧仍然有效时，
+     * 若小球还在目标外，保持旧管角会造成“未到T却永远不再尝试移动”。
+     * 因此这里只按位置误差给一个很小的开环试探角；不使用远距离强驱动角，
+     * 等连续两帧恢复出可靠速度后，再自动交回原双环PID控制。
+     */
+    if (g_speed_valid == 0U) {
+        float probe_angle = 0.0f;
+
+        PID_DecayIntegral(&g_position_pid, PID_INTEGRAL_DECAY);
+        PID_DecayIntegral(&g_speed_pid, PID_INTEGRAL_DECAY);
+        target_speed = 0.0f;
+
+        if (position_error > POSITION_DEADBAND_EXIT) {
+            probe_angle = PIPE_RESTART_POSITIVE_DEG;
+        } else if (position_error < -POSITION_DEADBAND_EXIT) {
+            probe_angle = -PIPE_RESTART_NEGATIVE_DEG;
+        }
+
+        /* 试探角同样经过斜率限制，避免速度样本有效/无效切换时跳变。 */
+        change = probe_angle - pipe_angle;
+        if (change > PIPE_ANGLE_SLEW_PER_CYCLE) {
+            change = PIPE_ANGLE_SLEW_PER_CYCLE;
+        } else if (change < -PIPE_ANGLE_SLEW_PER_CYCLE) {
+            change = -PIPE_ANGLE_SLEW_PER_CYCLE;
+        }
+        pipe_angle += change;
+        Motor_SetAngle(pipe_angle);
+        return;
     }
 
     /*
@@ -623,18 +808,6 @@ static void Ball_ControlUpdate(void)
         ? -position_error : position_error;
     absolute_current_speed = (control_speed < 0.0f)
         ? -control_speed : control_speed;
-
-    /*
-     * 用当前球速预测一小段时间后的落点，使水管在球真正到达目标前开始减速。
-     * 对预测位置限幅，避免视觉速度偶发尖峰直接产生极端的反向控制量。
-     */
-    predicted_position = (float)current_position +
-        control_speed * POSITION_LOOKAHEAD_S;
-    if (predicted_position > 600.0f) {
-        predicted_position = 600.0f;
-    } else if (predicted_position < -100.0f) {
-        predicted_position = -100.0f;
-    }
 
     /* 修改目标位置时立即退出旧目标锁定；同一目标使用2/4滞回避免边界抖动。 */
     if ((g_position_locked != 0U) &&
@@ -653,25 +826,37 @@ static void Ball_ControlUpdate(void)
     }
     in_deadband = g_position_locked;
 
+    /*
+     * 第一阶段必须实际读到360才换向，不能让通用的+-1位置死区在359提前锁定。
+     * 该例外只用于S1；返回125及最终保持仍完整沿用原死区和低速判定。
+     */
+    if ((g_sequence_state == BALL_SEQUENCE_TO_360) &&
+        (current_position < SEQUENCE_FIRST_TARGET)) {
+        g_position_locked = 0U;
+        in_deadband = 0U;
+    }
+
 #if POSITION_LOOP_ENABLED
     desired_target_speed = PID_UpdateConditional(&g_position_pid,
-        (float)target_position, predicted_position,
+        (float)target_position, (float)current_position,
         (uint8_t)(in_deadband == 0U));
     if (in_deadband != 0U) {
         desired_target_speed = 0.0f;
         PID_DecayIntegral(&g_position_pid, PID_INTEGRAL_DECAY);
-    } else if (absolute_position_error < POSITION_SLOW_ZONE) {
+    } else {
         /*
-         * 靠近目标后按实际距离动态限制速度：仍然允许缓慢微调，但不会用远距离时的大速度冲向目标。
+         * 速度方向与目标方向相同时减小目标速度，形成提前制动；
+         * 球反向远离目标时该项会增强追回速度。它不改变PID的实际位置反馈点。
          */
-        near_speed_limit = POSITION_NEAR_MIN_SPEED +
-            absolute_position_error * POSITION_NEAR_SPEED_SLOPE;
-        if (desired_target_speed > near_speed_limit) {
-            desired_target_speed = near_speed_limit;
-        } else if (desired_target_speed < -near_speed_limit) {
-            desired_target_speed = -near_speed_limit;
+        desired_target_speed -=
+            POSITION_SPEED_DAMPING_GAIN * control_speed;
+        if (desired_target_speed > POSITION_MAX_SPEED) {
+            desired_target_speed = POSITION_MAX_SPEED;
+        } else if (desired_target_speed < -POSITION_MAX_SPEED) {
+            desired_target_speed = -POSITION_MAX_SPEED;
         }
     }
+
 #else
     /* 单独调内环时使用固定目标速度，不执行位置PID。 */
     desired_target_speed = SPEED_LOOP_TEST_TARGET;
@@ -700,6 +885,22 @@ static void Ball_ControlUpdate(void)
     }
     target_speed += change;
 
+    /*
+     * 预测制动或斜率过渡可能使target_speed暂时停在0附近。
+     * 如果实际位置仍在死区外且球已经静止，根据真实位置误差恢复一个小速度，
+     * 避免“尚未到达目标，但TS=0后永远不再动作”。
+     */
+    if ((in_deadband == 0U) &&
+        (absolute_current_speed <= BALL_STOP_SPEED_THRESHOLD) &&
+        (target_speed > -POSITION_RECOVERY_MIN_SPEED) &&
+        (target_speed < POSITION_RECOVERY_MIN_SPEED)) {
+        if (position_error > 0.0f) {
+            target_speed = POSITION_RECOVERY_MIN_SPEED;
+        } else if (position_error < 0.0f) {
+            target_speed = -POSITION_RECOVERY_MIN_SPEED;
+        }
+    }
+
     if ((in_deadband != 0U) &&
         (absolute_current_speed <= BALL_STOP_SPEED_THRESHOLD)) {
         /* 小球基本静止后让水管回到零角，同时逐步卸掉旧方向速度积分。 */
@@ -725,12 +926,36 @@ static void Ball_ControlUpdate(void)
      */
     if ((in_deadband == 0U) &&
         (absolute_current_speed <= BALL_STOP_SPEED_THRESHOLD)) {
-        if ((target_speed > 0.0f) &&
+        if ((position_error > 0.0f) &&
             (desired_pipe_angle < PIPE_RESTART_POSITIVE_DEG)) {
             desired_pipe_angle = PIPE_RESTART_POSITIVE_DEG;
-        } else if ((target_speed < 0.0f) &&
+        } else if ((position_error < 0.0f) &&
             (desired_pipe_angle > -PIPE_RESTART_NEGATIVE_DEG)) {
             desired_pipe_angle = -PIPE_RESTART_NEGATIVE_DEG;
+        }
+    }
+
+    /*
+     * 误差大于120时提高远距离驱动力。
+     * 球运动时只放大PID结果；球静止时再保证最终角度达到可启动的最低值。
+     */
+    if (absolute_position_error > POSITION_FAR_ZONE) {
+        desired_pipe_angle *= PIPE_FAR_ANGLE_GAIN;
+
+        if (absolute_current_speed <= BALL_STOP_SPEED_THRESHOLD) {
+            if ((position_error > 0.0f) &&
+                (desired_pipe_angle < PIPE_FAR_POSITIVE_MIN_DEG)) {
+                desired_pipe_angle = PIPE_FAR_POSITIVE_MIN_DEG;
+            } else if ((position_error < 0.0f) &&
+                (desired_pipe_angle > -PIPE_FAR_NEGATIVE_MIN_DEG)) {
+                desired_pipe_angle = -PIPE_FAR_NEGATIVE_MIN_DEG;
+            }
+        }
+
+        if (desired_pipe_angle > PIPE_MAX_ANGLE_DEG) {
+            desired_pipe_angle = PIPE_MAX_ANGLE_DEG;
+        } else if (desired_pipe_angle < -PIPE_NEGATIVE_MAX_ANGLE_DEG) {
+            desired_pipe_angle = -PIPE_NEGATIVE_MAX_ANGLE_DEG;
         }
     }
 
@@ -746,12 +971,45 @@ static void Ball_ControlUpdate(void)
         }
     }
 
-    /* 对最终管角继续做斜率限制，降低水管和小球惯性造成的过冲。 */
+    /*
+     * 360换向后的独立安全保护。370起要求最大允许回拉角，375处跳过
+     * 普通斜率直接给硬保护角；仅在返回125阶段生效，不改变正常PID算法。
+     */
+    if ((g_sequence_state >= BALL_SEQUENCE_TO_125) &&
+        (current_position >= SEQUENCE_GUARD_POSITION) &&
+        (desired_pipe_angle > SEQUENCE_GUARD_ANGLE_DEG)) {
+        desired_pipe_angle = SEQUENCE_GUARD_ANGLE_DEG;
+    }
+    if ((g_sequence_state >= BALL_SEQUENCE_TO_125) &&
+        (current_position >= SEQUENCE_HARD_LIMIT_POSITION)) {
+        pipe_angle = SEQUENCE_HARD_GUARD_ANGLE_DEG;
+        Motor_SetAngle(pipe_angle);
+        return;
+    }
+
+    /*
+     * 正常加大倾角仍使用0.15°/周期；撤销旧倾角或反向制动使用0.35°/周期。
+     * 这样不会提高正常加速冲击，但能明显缩短越过目标后的制动建立时间。
+     */
+    pipe_angle_slew = PIPE_ANGLE_SLEW_PER_CYCLE;
+    if (((pipe_angle > 0.0f) &&
+         (desired_pipe_angle < pipe_angle)) ||
+        ((pipe_angle < 0.0f) &&
+         (desired_pipe_angle > pipe_angle))) {
+        pipe_angle_slew = PIPE_ANGLE_BRAKE_SLEW;
+    }
+    if ((g_sequence_state == BALL_SEQUENCE_TO_125) &&
+        (current_position >= SEQUENCE_FIRST_TARGET) &&
+        (pipe_angle > desired_pipe_angle)) {
+        /* 360后的反向必须比普通微调更快，避免旧正角继续推动小球。 */
+        pipe_angle_slew = SEQUENCE_REVERSE_SLEW_DEG;
+    }
+
     change = desired_pipe_angle - pipe_angle;
-    if (change > PIPE_ANGLE_SLEW_PER_CYCLE) {
-        change = PIPE_ANGLE_SLEW_PER_CYCLE;
-    } else if (change < -PIPE_ANGLE_SLEW_PER_CYCLE) {
-        change = -PIPE_ANGLE_SLEW_PER_CYCLE;
+    if (change > pipe_angle_slew) {
+        change = pipe_angle_slew;
+    } else if (change < -pipe_angle_slew) {
+        change = -pipe_angle_slew;
     }
     pipe_angle += change;
     Motor_SetAngle(pipe_angle);
@@ -762,6 +1020,7 @@ int main(void)
 {
     SYSCFG_DL_init();
     LLM_UART_Init();
+    Motor_UART_EnableRxInterrupt();
     Bianma_Init();
     NVIC_DisableIRQ(PRINT_INST_INT_IRQN);
 
@@ -779,10 +1038,11 @@ int main(void)
     (void)DL_SYSTICK_config(CPUCLK_FREQ / 1000U);
     delay_ms(500U);
     Emm_V5_En_Control(EMM_ADDRESS, true, false);
-    delay_ms(10U);
+    /* 闭环驱动器刚上电时UART和编码器尚未完全稳定，不能马上读取位置。 */
+    delay_ms(MOTOR_ENABLE_SETTLE_MS);
     /* MCU复位后先终止驱动器可能残留的旧运动，再采集本次启动的机械零角。 */
     Emm_V5_Stop_Now(EMM_ADDRESS, false);
-    delay_ms(10U);
+    delay_ms(MOTOR_STOP_SETTLE_MS);
 
     while (1) {
         uint8_t received;
@@ -798,7 +1058,8 @@ int main(void)
         /* 每1 ms读取一次旋钮，使20次按钮消抖计数对应真实20 ms。 */
         if ((uint32_t)(now - g_last_encoder_ms) >= 1U) {
             g_last_encoder_ms = now;
-            Target_PositionUpdate();
+            /* 固定T测试：禁止旋钮旋转和按键改变目标或启动状态机。 */
+            /* Target_PositionUpdate(); */
         }
 
         if ((uint32_t)(now - g_last_control_ms) >= CONTROL_PERIOD_MS) {
@@ -807,6 +1068,8 @@ int main(void)
 
             if ((g_position_valid != 0U) &&
                 ((uint32_t)(now - g_last_frame_ms) <= SENSOR_TIMEOUT_MS)) {
+                /* 固定T测试：禁止240->360->125状态机改写target_position。 */
+                /* Ball_SequenceUpdate(); */
                 Ball_ControlUpdate();
             } else {
                 Ball_ControlStop();

@@ -81,6 +81,16 @@ uint8_t Bianma_Button_Pressed(void)
     return 0U;
 }
 
+/**
+ * 旋钮SW使用内部上拉，按下时应将PB19接地，因此低电平表示按下。
+ * 此函数用于启动按键的即时判定和OLED接线诊断。
+ */
+uint8_t Bianma_Button_IsPressed(void)
+{
+    return (DL_GPIO_readPins(Bianma_PORT, Bianma_ENC_SW_PIN) == 0U)
+        ? 1U : 0U;
+}
+
 uint8_t Bianma_GetParamIndex(void)
 {
     return g_pid_selection;
