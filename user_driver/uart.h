@@ -11,6 +11,8 @@ uint8_t Motor_UART_ReadByte(uint8_t *value);
 
 /** 开启UART0电机反馈接收中断，避免OLED刷新期间丢失反馈帧。 */
 void Motor_UART_EnableRxInterrupt(void);
+/** 开启UART2 CAM2接收中断，并使用已有环形缓冲保存完整位置帧。 */
+void UART_EnableRxInterrupt(void);
 uint8_t UART_read_received_byte(uint8_t *value);
 uint16_t UART_get_rx_overflow_count(void);
 

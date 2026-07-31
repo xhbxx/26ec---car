@@ -24,15 +24,45 @@ void UART_send_string(UART_Regs *uart, const char *str)
     }
 }
 
-/** 从CAM2数据串口UART2/PA22读取一个字节；无数据返回0。 */
+/** 从CAM2 UART2中断环形缓冲读取一个字节；无数据返回0。 */
 uint8_t UART_read_received_byte(uint8_t *value)
 {
     if (value == 0) {
         return 0U;
     }
 
-    /* CAM2接收采用轮询硬件FIFO，不依赖中断。 */
-    return DL_UART_Main_receiveDataCheck(PRINT_INST, value) ? 1U : 0U;
+    if (g_uart_rx_head == g_uart_rx_tail) {
+        return 0U;
+    }
+
+    *value = g_uart_rx_buffer[g_uart_rx_tail];
+    g_uart_rx_tail = (uint16_t)((g_uart_rx_tail + 1U) %
+        UART_RX_BUFFER_SIZE);
+    return 1U;
+}
+
+/**
+ * 开启CAM2 UART2接收中断。
+ *
+ * CAM2会连续发送7字节位置帧，而电机上电同步和OLED刷新都会暂时占用主循环。
+ * 中断只负责把字节存入512字节环形缓冲，协议解析仍在原主循环执行，因此不会
+ * 改变AA 55 01 SEQ POS_L POS_H CRC8格式，也不会阻塞20ms控制任务。
+ */
+void UART_EnableRxInterrupt(void)
+{
+    g_uart_rx_head = 0U;
+    g_uart_rx_tail = 0U;
+    g_uart_rx_overflow_count = 0U;
+
+    /* 丢弃使能中断前可能残留的半帧，后续解析器会从新的0xAA重新同步。 */
+    while (!DL_UART_Main_isRXFIFOEmpty(PRINT_INST)) {
+        (void)DL_UART_Main_receiveData(PRINT_INST);
+    }
+    DL_UART_Main_setRXFIFOThreshold(
+        PRINT_INST, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
+    DL_UART_Main_enableInterrupt(PRINT_INST, DL_UART_MAIN_INTERRUPT_RX);
+    NVIC_ClearPendingIRQ(PRINT_INST_INT_IRQN);
+    NVIC_EnableIRQ(PRINT_INST_INT_IRQN);
 }
 
 /** 从Emm_V5电机反馈串口UART0/PA31读取一个字节；无数据返回0。 */
@@ -59,6 +89,14 @@ void Motor_UART_EnableRxInterrupt(void)
 {
     g_motor_uart_rx_head = 0U;
     g_motor_uart_rx_tail = 0U;
+
+    /*
+     * MCU和电机同时上电时，RX FIFO内可能残留不完整的上电噪声或旧反馈半帧。
+     * 在启动同步查询前丢弃这些字节，确保后续解析从新的Addr(0x01)开始。
+     */
+    while (!DL_UART_Main_isRXFIFOEmpty(MOTOR_UART_INST)) {
+        (void)DL_UART_Main_receiveData(MOTOR_UART_INST);
+    }
     DL_UART_Main_setRXFIFOThreshold(
         MOTOR_UART_INST, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
     DL_UART_Main_enableInterrupt(MOTOR_UART_INST, DL_UART_MAIN_INTERRUPT_RX);

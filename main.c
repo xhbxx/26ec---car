@@ -27,8 +27,10 @@
 #define MOTOR_FEEDBACK_RESPONSE_WAIT_MS (15UL)
 #define MOTOR_ENABLE_SETTLE_MS         (120U)
 #define MOTOR_STOP_SETTLE_MS           (50U)
+/* 上电后主动等待首帧电机位置反馈的最长时间；仅初始化阶段使用，不影响20ms控制周期。 */
+#define MOTOR_STARTUP_SYNC_TIMEOUT_MS  (1000UL)
 /* PID只允许小角度运动，反馈相对启动零点超出该范围时视为异常帧。 */
-#define MOTOR_FEEDBACK_ANGLE_LIMIT_DEG (15.0f)
+#define MOTOR_FEEDBACK_ANGLE_LIMIT_DEG (20.0f)
 
 /*
  * 双环调试开关：
@@ -50,21 +52,37 @@
 #define POSITION_TARGET_STEP           (1)
 
 /*
- * 自动运行顺序：球从240附近出发，先向360运动；到达360后不停车，立即反向前往125。
+ * 编码器按键测试顺序：球手动放在C≈250后，按下编码器，先向360运动；到达360±5后不停车，立即反向前往125。
  * 允许惯性越过360，但370开始强制回拉，375为硬保护线。
  */
+/* 历史起点窗口参数；当前按键启动不检查此窗口，仍保留以兼容原工程。 */
 #define SEQUENCE_START_MIN             (235U)
 #define SEQUENCE_START_MAX             (245U)
+/* 第1段的视觉坐标目标：按键后小球从约250向坐标增大方向运动到360。 */
 #define SEQUENCE_FIRST_TARGET          (360U)
+/* 第2段及最终保持的视觉坐标目标：到360后立即反向，最终稳定在125。 */
 #define SEQUENCE_FINAL_TARGET          (125U)
+/*
+ * 第1段到达容差，单位为视觉坐标值。小球向360单向运动时，C>=355便切换回程；
+ * 这样即使某一帧从354直接跳到366，也不会漏掉换向，实际允许范围为360±5。
+ */
+#define SEQUENCE_FIRST_TOLERANCE       (5U)
+/* 历史“起点稳定帧数”参数；当前按键启动流程不使用，保留但不参与判断。 */
 #define SEQUENCE_START_STABLE_CYCLES   (5U)
+/* 在125±5内且低速时，必须连续满足5个新的视觉位置帧才确认最终保持。 */
 #define SEQUENCE_FINAL_STABLE_CYCLES   (5U)
-#define SEQUENCE_FINAL_TOLERANCE       (3U)
+/* 最终保持的位置容差，单位为视觉坐标值，允许范围为120~130。 */
+#define SEQUENCE_FINAL_TOLERANCE       (5U)
+/* 返回125阶段若因惯性仍越过370，开始强制限制为负方向回拉角。 */
 #define SEQUENCE_GUARD_POSITION        (370U)
+/* 返回125阶段越过375时，跳过普通PID斜率限制并直接下发硬回拉角。 */
 #define SEQUENCE_HARD_LIMIT_POSITION   (375U)
-#define SEQUENCE_GUARD_ANGLE_DEG       (-3.0f)
-#define SEQUENCE_HARD_GUARD_ANGLE_DEG  (-4.0f)
-#define SEQUENCE_REVERSE_SLEW_DEG      (0.80f)
+/* C>=370时允许的最大管角，负号表示朝坐标减小方向拉回。单位：度。 */
+#define SEQUENCE_GUARD_ANGLE_DEG       (-4.0f)
+/* C>=375时直接使用的安全回拉管角，力度大于普通保护角。单位：度。 */
+#define SEQUENCE_HARD_GUARD_ANGLE_DEG  (-5.0f)
+/* 360后反向时每20ms允许的最大管角变化量，帮助快速撤销原正向推力。单位：度/20ms。 */
+#define SEQUENCE_REVERSE_SLEW_DEG      (0.60f)
 /* 位置死区：|目标位置-当前位置|不超过该值时，目标速度置零，防止目标附近来回动作。 */
 /* 只在非常接近目标时锁定；误差超过2立即恢复缓慢调整。 */
 #define POSITION_DEADBAND              (1.0f)
@@ -77,37 +95,37 @@
  * 位置PID只反馈实际位置；速度阻尼作为独立修正项叠加到外环输出。
  * 原预测反馈等效阻尼约为POSITION_KP*0.1=0.03，当前只保留很小的0.008阻尼。
  */
-#define POSITION_SPEED_DAMPING_GAIN    (0.040f)
+#define POSITION_SPEED_DAMPING_GAIN    (0.020f)
 /*
  * 远距离控制：运动时适度放大PID角度；静止时保证管角超过实测静摩擦阈值。
  * 最低角只在球静止时使用，检测到运动后立即恢复速度闭环输出。
  */
-#define POSITION_FAR_ZONE              (20.0f) /* |T-C|大于50进入强驱动区 */
-#define PIPE_FAR_ANGLE_GAIN            (1.60f) /* 远距离运动中放大速度环角度 */
-#define PIPE_FAR_POSITIVE_MIN_DEG      (3.80f) /* 远距离静止时正方向最低启动角 */
-#define PIPE_FAR_NEGATIVE_MIN_DEG      (3.40f) /* 远距离静止时负方向最低启动角 */
+#define POSITION_FAR_ZONE              (18.0f) /* |T-C|大于50进入强驱动区 */
+#define PIPE_FAR_ANGLE_GAIN            (1.64f) /* 远距离运动中放大速度环角度 */
+#define PIPE_FAR_POSITIVE_MIN_DEG      (2.50f) /* 远距离静止时正方向最低启动角 */
+#define PIPE_FAR_NEGATIVE_MIN_DEG      (2.50f) /* 远距离静止时负方向最低启动角 */
 /* 未到目标但球已静止、target_speed又接近0时使用的小恢复速度。 */
-#define POSITION_RECOVERY_MIN_SPEED    (16.0f)
+#define POSITION_RECOVERY_MIN_SPEED    (10.0f)
 /* 每20ms允许目标速度改变的最大值，避免进入死区时从PID输出硬切到0。 */
 #define TARGET_SPEED_SLEW_PER_CYCLE    (3.0f)
 /*
  * 制动时允许目标速度更快地减小或反向。
  * 这不是提高正常追踪速度，而是缩短“球已经有惯性、控制器却还在慢慢撤销旧速度”的时间。
  */
-#define TARGET_SPEED_BRAKE_SLEW        (7.0f)
+#define TARGET_SPEED_BRAKE_SLEW        (7.5f)
 /* 进入位置死区后每20ms回零的最大速度变化量，专门消除setpoint硬切阶跃。 */
-#define TARGET_SPEED_STOP_SLEW         (0.75f)
+#define TARGET_SPEED_STOP_SLEW         (1.0f)
 
 /*
  * 位置外环 PID：输入目标位置和当前位置，输出 target_speed。
  * 调参时先令 POSITION_KI=0，调整 KP、KD，最后再少量增加 KI。
  */
 /* 位置比例系数：误差越大，要求的目标速度越大；过大会过冲和来回摆动，过小则响应慢。 */
-#define POSITION_KP                    (1.20f)
+#define POSITION_KP                    (1.1f)
 /* 位置积分系数：消除长期位置偏差；过大会积分累积并导致明显过冲，通常只使用很小数值。 */
-#define POSITION_KI                    (0.020f)
+#define POSITION_KI                    (0.035f)
 /* 位置微分系数：根据误差变化提前减速、增加阻尼；过大会放大位置噪声并造成电机抖动。 */
-#define POSITION_KD                    (0.00f)
+#define POSITION_KD                    (0.01f)
 /* 位置外环最大输出，即 target_speed 的绝对值上限；越大允许小球移动得越快，也越容易冲过目标。 */
 #define POSITION_MAX_SPEED             (70.0f)
 /* 位置环积分累计上限，用于防止长时间大误差造成积分饱和；不是速度或角度上限。 */
@@ -118,34 +136,34 @@
  * 它决定水管需要倾斜多少来使小球速度跟随位置外环的要求。
  */
 /* 速度比例系数：速度误差对应的即时倾角；增大可提高动作幅度，过大会造成速度震荡。 */
-#define SPEED_KP                       (0.075f)
+#define SPEED_KP                       (0.068f)
 /* 速度积分系数：补偿摩擦、坡度等造成的长期速度不足；过大会持续加大倾角并导致过冲。 */
-#define SPEED_KI                       (0.02f)
+#define SPEED_KI                       (0.03f)
 /* 速度微分系数：抑制速度突然变化；速度反馈噪声较大，因此通常只能使用很小数值。 */
-#define SPEED_KD                       (0.00f)
+#define SPEED_KD                       (0.02f)
 /* 速度内环最终输出的机械管角上限，单位为度；同时限制正、负两个方向为 ±该数值。 */
-#define PIPE_MAX_ANGLE_DEG             (6.0f)
+#define PIPE_MAX_ANGLE_DEG             (10.0f)
 /*
  * 负管角方向的机构力度补偿：1.0表示不补偿，数值越大，靠近500一侧的回拉幅度越大。
  * 补偿后的角度仍会被 PIPE_MAX_ANGLE_DEG 限制，不会突破机械角度上限。
  */
 #define PIPE_NEGATIVE_ANGLE_GAIN       (1.00f)
 /* 往0方向使用负管角，单独限制该方向的最大幅度，避免下降方向动作过大。 */
-#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (6.0f)
+#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (11.0f)
 /* 靠近目标时分方向限制管角；正方向需要更强制动力，负方向保持原限制。 */
 #define PIPE_NEAR_ZONE                 (25.0f)
 #define PIPE_NEAR_POSITIVE_MAX_DEG     (3.00f)
-#define PIPE_NEAR_NEGATIVE_MAX_DEG     (2.80f)
+#define PIPE_NEAR_NEGATIVE_MAX_DEG     (2.8f)
 /*
  * 实测静摩擦不对称：往500方向约1°才能可靠启动，新的零点下往0方向需超过1.02°。
  * 两个数值只在球静止且仍在目标外时使用，运动后立即交回速度PID。
  */
 #define PIPE_RESTART_POSITIVE_DEG      (1.50f)
-#define PIPE_RESTART_NEGATIVE_DEG      (1.40f)
+#define PIPE_RESTART_NEGATIVE_DEG      (1.50f)
 /* 每20ms允许管角目标改变的最大角度，限制电机和水管的瞬时动作。 */
-#define PIPE_ANGLE_SLEW_PER_CYCLE      (0.80f)
+#define PIPE_ANGLE_SLEW_PER_CYCLE      (0.45f)
 /* 减小旧角度或反向制动时允许更快变化，避免水管几百毫秒后才建立制动力。 */
-#define PIPE_ANGLE_BRAKE_SLEW          (0.90f)
+#define PIPE_ANGLE_BRAKE_SLEW          (0.60f)
 /* 死区内速度低于该值时认为小球基本静止，管角平滑回到机械零角。 */
 #define BALL_STOP_SPEED_THRESHOLD      (2.0f)
 /* 死区内每周期保留的积分比例，逐渐卸掉旧方向积分而不是瞬间清零。 */
@@ -153,9 +171,9 @@
 /* 速度环积分累计上限，防止小球长期不动时积分不断增加并突然产生过大倾角。 */
 #define SPEED_INTEGRAL_LIMIT           (180.0f)
 /* 速度一阶低通系数：越大越跟手但噪声越明显，越小越平滑但速度反馈延迟越大，范围0~1。 */
-#define SPEED_FILTER_ALPHA             (0.25f)
+#define SPEED_FILTER_ALPHA             (0.4f)
 /* 两个 PID 共用的微分低通系数：越大越灵敏，越小越平滑，范围0~1。 */
-#define PID_DERIVATIVE_ALPHA           (0.3f)
+#define PID_DERIVATIVE_ALPHA           (0.27f)
 
 #define EMM_ADDRESS                    (1U)
 #define EMM_MOVE_SPEED_RPM             (30U)
@@ -505,6 +523,39 @@ static void Motor_ControlService(uint32_t now)
     }
 }
 
+/**
+ * 上电阶段主动同步电机实时位置。
+ *
+ * 电机驱动器与MSPM0同时上电时，驱动器的内部串口/编码器就绪通常晚于MCU。
+ * 若直接进入主循环，第一次查询可能落在驱动器未就绪阶段，OLED上的M需要等待
+ * 后续刷新才出现。这里在不发送任何运动角度的前提下，持续查询首帧位置：
+ * - 首帧有效位置被Motor_PushFeedbackByte()记录为机械零角；
+ * - 成功后立即退出；
+ * - 1秒仍无反馈也不死锁，仍会进入原有主循环继续正常查询。
+ */
+static void Motor_StartupSynchronize(void)
+{
+    uint32_t start_ms = g_milliseconds;
+
+    /* 清除上电瞬间可能残留的半帧，强制下一帧从Addr开始重新解析。 */
+    g_motor_rx_index = 0U;
+    g_motor_feedback_valid = 0U;
+    g_motor_feedback_query_pending = 0U;
+    g_motor_zero_captured = 0U;
+
+    /* 让Motor_ControlService第一次调用立即发出S_CPOS查询，而非等待周期到期。 */
+    g_last_motor_query_ms = start_ms - MOTOR_STARTUP_QUERY_MS;
+    g_last_motor_command_ms = start_ms - MOTOR_COMMAND_PERIOD_MS;
+
+    while ((g_motor_zero_captured == 0U) &&
+           ((uint32_t)(g_milliseconds - start_ms) <
+            MOTOR_STARTUP_SYNC_TIMEOUT_MS)) {
+        Motor_ControlService(g_milliseconds);
+        /* 1ms期间UART0 RX中断仍可接收8字节反馈帧。 */
+        delay_ms(1U);
+    }
+}
+
 /** [llm-pid-tuner] 解析 SETPOINT:<value>，错误或越界指令静默丢弃。 */
 static void LLM_UART_ParseSetpointByte(uint8_t received)
 {
@@ -654,7 +705,7 @@ static void Ball_ControlStop(void)
 
 /**
  * 自动目标状态机，只负责切换现有双环PID的target_position，不另建控制链路。
- * S0等待240附近稳定，S1前往360，S2立即反向前往125，S3在125附近保持。
+ * S0等待编码器按键，T固定为250且水管归零；S1前往360；S2立即反向前往125；S3在125±5内保持。
  */
 /** 等待按键时保持T=250和机械零角，但不清掉位置反馈或UART接收状态。 */
 static void Ball_ControlIdle(void)
@@ -680,9 +731,13 @@ static void Ball_SequenceUpdate(void)
 
     switch (g_sequence_state) {
     case BALL_SEQUENCE_WAIT_START:
-        /* 等待阶段跟随当前位置，防止球尚未放到起点时水管主动倾斜。 */
+        /*
+         * 等待阶段：OLED显示T=250，但Ball_ControlIdle()会让水管保持零角，
+         * 因此用户可手动把球放到C≈250，未按键前不会被PID主动推动。
+         */
         target_position = POSITION_DEFAULT_TARGET;
         if (g_sequence_start_requested != 0U) {
+            /* 编码器按键已经消抖确认：只清本次运动残留的PID状态，再开始第1段。 */
             g_sequence_stable_cycles = 0U;
             g_sequence_start_requested = 0U;
             g_sequence_state = BALL_SEQUENCE_TO_360;
@@ -695,8 +750,13 @@ static void Ball_SequenceUpdate(void)
 
     case BALL_SEQUENCE_TO_360:
         target_position = SEQUENCE_FIRST_TARGET;
-        if (current_position >= SEQUENCE_FIRST_TARGET) {
-            /* 到达360后直接反向；清除上一阶段的正向积分和目标速度。 */
+        /*
+         * 向360运动时进入360-5即可认为到达。由于本阶段只会向增大方向运动，
+         * 使用下边界触发可避免视觉单帧跳过360+5时错过换向机会。
+         */
+        if (current_position >=
+            (SEQUENCE_FIRST_TARGET - SEQUENCE_FIRST_TOLERANCE)) {
+            /* 到达360±5范围后直接反向；清除上一阶段的正向积分和目标速度。 */
             g_sequence_state = BALL_SEQUENCE_TO_125;
             target_position = SEQUENCE_FINAL_TARGET;
             target_speed = 0.0f;
@@ -708,6 +768,10 @@ static void Ball_SequenceUpdate(void)
 
     case BALL_SEQUENCE_TO_125:
         target_position = SEQUENCE_FINAL_TARGET;
+        /*
+         * 只有收到新视觉帧、位置落在120~130、且|CS|不大于POSITION_LOCK_SPEED时才计一次稳定帧。
+         * 这避免小球高速穿过125时被误判为结束；中途任何一帧不满足都会重新计数。
+         */
         if ((new_position_sample != 0U) &&
             (current_position >=
              (SEQUENCE_FINAL_TARGET - SEQUENCE_FINAL_TOLERANCE)) &&
@@ -726,7 +790,7 @@ static void Ball_SequenceUpdate(void)
 
     case BALL_SEQUENCE_HOLD_125:
     default:
-        /* 保持阶段仍使用原双环PID，受到扰动离开125后会自动微调回来。 */
+        /* 最终阶段始终保持T=125；仍运行原双环PID，受扰动离开125后会自动微调回来。 */
         target_position = SEQUENCE_FINAL_TARGET;
         break;
     }
@@ -1022,7 +1086,11 @@ int main(void)
     LLM_UART_Init();
     Motor_UART_EnableRxInterrupt();
     Bianma_Init();
-    NVIC_DisableIRQ(PRINT_INST_INT_IRQN);
+    /*
+     * CAM2位置帧改由UART2 RX中断先存入环形缓冲。
+     * 这样后面的OLED初始化和电机上电位置同步期间也不会丢失整帧数据。
+     */
+    UART_EnableRxInterrupt();
 
     PID_Init(&g_position_pid, POSITION_KP, POSITION_KI, POSITION_KD,
         CONTROL_DT_S, POSITION_MAX_SPEED, POSITION_INTEGRAL_LIMIT,
@@ -1043,6 +1111,9 @@ int main(void)
     /* MCU复位后先终止驱动器可能残留的旧运动，再采集本次启动的机械零角。 */
     Emm_V5_Stop_Now(EMM_ADDRESS, false);
     delay_ms(MOTOR_STOP_SETTLE_MS);
+    /* 先获取电机初始绝对位置作为管角零点，再允许后续PID控制。 */
+    Motor_UART_EnableRxInterrupt();
+    Motor_StartupSynchronize();
 
     while (1) {
         uint8_t received;
@@ -1058,8 +1129,8 @@ int main(void)
         /* 每1 ms读取一次旋钮，使20次按钮消抖计数对应真实20 ms。 */
         if ((uint32_t)(now - g_last_encoder_ms) >= 1U) {
             g_last_encoder_ms = now;
-            /* 固定T测试：禁止旋钮旋转和按键改变目标或启动状态机。 */
-            /* Target_PositionUpdate(); */
+            /* 只读取编码器按键：按下后启动250->360->125测试流程。 */
+            Target_PositionUpdate();
         }
 
         if ((uint32_t)(now - g_last_control_ms) >= CONTROL_PERIOD_MS) {
@@ -1068,9 +1139,14 @@ int main(void)
 
             if ((g_position_valid != 0U) &&
                 ((uint32_t)(now - g_last_frame_ms) <= SENSOR_TIMEOUT_MS)) {
-                /* 固定T测试：禁止240->360->125状态机改写target_position。 */
-                /* Ball_SequenceUpdate(); */
-                Ball_ControlUpdate();
+                /* 状态机只切换T，PID和电机控制仍使用原有Ball_ControlUpdate。 */
+                Ball_SequenceUpdate();
+                if (g_sequence_state == BALL_SEQUENCE_WAIT_START) {
+                    /* 按键触发前保持T=250和水管机械零角。 */
+                    Ball_ControlIdle();
+                } else {
+                    Ball_ControlUpdate();
+                }
             } else {
                 Ball_ControlStop();
             }
