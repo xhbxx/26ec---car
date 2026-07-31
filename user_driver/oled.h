@@ -140,6 +140,14 @@ void OLED_DisPlay_Off(void);
 void OLED_Refresh(void);
 
 /**
+ * @brief 只清空OLED内存缓冲区，不立即进行I2C整屏刷新。
+ *
+ * 菜单内容变化时先调用本函数重画缓冲区，再由主循环分页面刷新，
+ * 可避免先显示空白帧造成闪烁，并减少对编码器采样的阻塞。
+ */
+void OLED_ClearBuffer(void);
+
+/**
  * @brief 清空 OLED 显存并刷新到屏幕
  *
  * @note 调用后会清除整个屏幕显示内容。

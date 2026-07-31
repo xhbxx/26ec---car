@@ -206,6 +206,19 @@ void OLED_Refresh(void)
 }
 
 //清屏函数
+/** 只清显存，不访问I2C，适合运行过程中重画界面。 */
+void OLED_ClearBuffer(void)
+{
+	u8 i,n;
+	for(i=0;i<8;i++)
+	{
+		for(n=0;n<128;n++)
+		{
+			OLED_GRAM[n][i]=0;
+		}
+	}
+}
+
 void OLED_Clear(void)
 {
 	u8 i,n;

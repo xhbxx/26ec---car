@@ -1,0 +1,4 @@
+# FIXED
+
+main_selector.o: ../main_selector.c ../main_program_select.h
+../main_program_select.h:

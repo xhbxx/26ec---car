@@ -87,6 +87,7 @@ main.o: ../main.c \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/Emm_V5.h \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/bianma.h \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/delay.h \
+ ../main_program_select.h \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/oled.h \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/pid.h \
  E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/uart.h
@@ -176,6 +177,7 @@ C:/TI/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/Emm_V5.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/bianma.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/delay.h:
+../main_program_select.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/oled.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/pid.h:
 E:/install/keli/NEDC/10_DC_MOTOR_PID_3/user_driver/uart.h:
