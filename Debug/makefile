@@ -133,10 +133,16 @@ EXE_OUTPUTS += \
 EXE_OUTPUTS__QUOTED += \
 "11_TIANMENGXING_H_TASK_2456.out" 
 
+BIN_OUTPUTS += \
+11_TIANMENGXING_H_TASK_2456.txt 
+
+BIN_OUTPUTS__QUOTED += \
+"11_TIANMENGXING_H_TASK_2456.txt" 
+
 
 # All Target
 all: $(OBJS) $(GEN_CMDS)
-	@$(MAKE) --no-print-directory -Onone "11_TIANMENGXING_H_TASK_2456.out"
+	@$(MAKE) --no-print-directory -Onone "11_TIANMENGXING_H_TASK_2456.out" secondary-outputs
 
 # Tool invocations
 11_TIANMENGXING_H_TASK_2456.out: $(OBJS) $(GEN_CMDS)
@@ -145,12 +151,20 @@ all: $(OBJS) $(GEN_CMDS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 
+11_TIANMENGXING_H_TASK_2456.txt: $(EXE_OUTPUTS)
+	@echo 'Arm Hex Utility - building secondary target: "$@"'
+	"E:/install/keli/ti/css/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/bin/tiarmhex.exe" --diag_wrap=off --ti_txt -o "11_TIANMENGXING_H_TASK_2456.txt" $(EXE_OUTPUTS__QUOTED)
+	@echo 'Finished building secondary target: "$@"'
+	@echo ' '
+
 # Other Targets
 clean:
-	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
+	-$(RM) $(GEN_MISC_FILES__QUOTED)$(BIN_OUTPUTS__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
 	-$(RM) "chassis_controller.o" "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "imu_heading.o" "infrared.o" "line_sensor.o" "main.o" "user_driver\atk_ms6dsv.o" "user_driver\delay.o" "user_driver\encoder.o" "user_driver\motor.o" "user_driver\oled.o" "user_driver\pid.o" 
 	-$(RM) "chassis_controller.d" "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "imu_heading.d" "infrared.d" "line_sensor.d" "main.d" "user_driver\atk_ms6dsv.d" "user_driver\delay.d" "user_driver\encoder.d" "user_driver\motor.d" "user_driver\oled.d" "user_driver\pid.d" 
 	-@echo ' '
+
+secondary-outputs: $(BIN_OUTPUTS)
 
 .PHONY: all clean dependents
 .SECONDARY:

@@ -65,8 +65,8 @@
 
 ## Mode 2 控制逻辑
 
-1. 目标是在 20 秒内完成一整圈并停车；编码器根据实际速度提前预测急刹位置。
-2. AB、CD 直线距离分别由 `TRACK_STRAIGHT_MM` 和 `TRACK_CD_STRAIGHT_MM` 设置，陀螺仪分别保持 0 度和 180 度航向。
+1. Mode 2 不执行钢球控制，只要求在指定编码器里程完成一整圈并停车；编码器根据实际速度提前预测急刹位置。
+2. AB 直线距离由 `TRACK_STRAIGHT_MM` 设置，Mode 2 的 CD 直线距离由 `TASK2_CD_STRAIGHT_MM` 单独设置；陀螺仪分别保持 0 度和 180 度航向。
 3. BC、DA 半圆各由编码器走满 1571 mm，固定轮速差负责转弯，陀螺仪跟踪 0→180→360 度并追加限幅修正。
 4. 当前里程加预测刹车距离达到整圈目标时，直接将两轮目标速度设为 0 并使用 TB6612 短刹车，不进入低速接近阶段。
 
@@ -89,7 +89,8 @@
 - `user_driver/motor.h`：编码器参数、轮径、最大转速及速度 PID。
 - `TASK2_CURVE_STEERING_MMPS`：增大 Mode 2 转弯幅度，减小则更缓。
 - `TRACK_STRAIGHT_MM`：AB 第一段直线距离，也用于 Mode 4。
-- `TRACK_CD_STRAIGHT_MM`：Mode 2/5 的 CD 第二段直线距离。
+- `TASK2_CD_STRAIGHT_MM`：Mode 2 的 CD 第二段直线距离。
+- `TASK5_CD_STRAIGHT_MM`：Mode 5 的 CD 第二段直线距离。
 - `GYRO_Z_CLOCKWISE_SIGN`：陀螺仪正方向，只在 `1` 和 `-1` 之间切换。
 
 ## 编译

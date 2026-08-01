@@ -203,6 +203,18 @@ static int32_t chassis_curve_speed(void)
     return TASK5_CURVE_MMPS;
 }
 
+static int32_t chassis_cd_straight_distance_mm(void)
+{
+    return (g_task_mode == 2U)
+        ? TASK2_CD_STRAIGHT_MM : TASK5_CD_STRAIGHT_MM;
+}
+
+static int32_t chassis_lap_length_mm(void)
+{
+    return (g_task_mode == 2U)
+        ? TASK2_LAP_LENGTH_MM : TASK5_LAP_LENGTH_MM;
+}
+
 static void chassis_drive_straight(int32_t base_mmps,
     const LineSensorData *line, uint32_t elapsed_ms)
 {
@@ -226,12 +238,19 @@ static void chassis_drive_straight(int32_t base_mmps,
             limit = TASK45_GYRO_STRAIGHT_LIMIT_MMPS;
         }
 
-        /* Keep the absolute lap heading instead of accepting a bad exit angle. */
+        /* 按当前直线路段的目标航向计算陀螺仪修正。 */
+        int32_t heading_error = target_angle_mdeg -
+            ImuHeading_GetAngleMdeg();
+
         line_correction = chassis_limit32(
-            ((target_angle_mdeg - ImuHeading_GetAngleMdeg()) / 1000L) *
-                gain, limit);
+            (int32_t)(((int64_t)heading_error * gain) / 1000L), limit);
     } else {
         line_correction = chassis_line_correction(line);
+    }
+
+    /* Mode 2 出弯后立即建立回正差速，不经过转向缓变。 */
+    if ((g_task_mode == 2U) && (g_state == CHASSIS_STRAIGHT_CD)) {
+        g_steering_command_x1000 = line_correction * 1000L;
     }
 
     chassis_apply_wheels(base_mmps + line_correction,
@@ -410,7 +429,7 @@ void ChassisController_Update(uint32_t now_ms, const LineSensorData *line)
     case CHASSIS_STRAIGHT_CD:
         chassis_drive_straight(chassis_straight_speed(), line,
             elapsed_update);
-        if (state_distance >= TRACK_CD_STRAIGHT_MM) {
+        if (state_distance >= chassis_cd_straight_distance_mm()) {
             chassis_set_state(CHASSIS_CURVE_DA);
         }
         break;
@@ -419,12 +438,12 @@ void ChassisController_Update(uint32_t now_ms, const LineSensorData *line)
         chassis_drive_curve(elapsed_update, line, state_distance);
         if ((g_task_mode == 2U) &&
             (total_distance + chassis_task2_braking_distance_mm() >=
-                TRACK_LAP_LENGTH_MM)) {
+                chassis_lap_length_mm())) {
             chassis_begin_stop(CHASSIS_COMPLETE);
             break;
         }
         if ((g_task_mode == 5U) &&
-            (total_distance >= TRACK_LAP_LENGTH_MM - 220L) &&
+            (total_distance >= chassis_lap_length_mm() - 220L) &&
             (line != 0) && (line->all_active != 0U)) {
             if (++g_marker_samples >= LINE_MARKER_STABLE_SAMPLES) {
                 chassis_begin_stop(CHASSIS_COMPLETE);
@@ -449,7 +468,7 @@ void ChassisController_Update(uint32_t now_ms, const LineSensorData *line)
         } else {
             g_marker_samples = 0U;
         }
-        if (total_distance >= TRACK_LAP_LENGTH_MM +
+        if (total_distance >= chassis_lap_length_mm() +
             LAP_FALLBACK_EXTRA_MM) {
             chassis_begin_stop(CHASSIS_COMPLETE);
         }

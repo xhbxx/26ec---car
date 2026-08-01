@@ -93,6 +93,18 @@ static void display_update(void)
 {
     int32_t angle_mdeg = ImuHeading_GetAngleMdeg();
     uint32_t angle_deg;
+    uint32_t elapsed_tenths;
+
+    /* 陀螺仪完成静止零偏校准前，只显示等待提示。 */
+    if (ImuHeading_IsReady() == 0U) {
+        display_clear_row(0U);
+        display_clear_row(16U);
+        OLED_ShowString(0U, 16U, (u8 *)"LOADING", 12U);
+        display_clear_row(32U);
+        display_clear_row(48U);
+        OLED_Refresh();
+        return;
+    }
 
     if (angle_mdeg < 0) {
         angle_deg = (uint32_t)(-angle_mdeg / 1000L);
@@ -135,8 +147,18 @@ static void display_update(void)
     OLED_ShowNum(12U, 32U, ChassisController_GetTaskMode(), 1U, 12U);
     OLED_ShowString(18U, 32U, (u8 *)" ST:", 12U);
     OLED_ShowNum(42U, 32U, ChassisController_GetState(), 1U, 12U);
-    OLED_ShowString(54U, 32U, (u8 *)" IMU:", 12U);
-    OLED_ShowNum(84U, 32U, ATK_MS6DSV_GetStatus(), 1U, 12U);
+    if (ChassisController_GetTaskMode() == 2U) {
+        elapsed_tenths = ChassisController_GetElapsedMs(
+            g_milliseconds) / 100U;
+        OLED_ShowString(54U, 32U, (u8 *)" T:", 12U);
+        OLED_ShowNum(72U, 32U, elapsed_tenths / 10U, 2U, 12U);
+        OLED_ShowString(84U, 32U, (u8 *)".", 12U);
+        OLED_ShowNum(90U, 32U, elapsed_tenths % 10U, 1U, 12U);
+        OLED_ShowString(96U, 32U, (u8 *)"S", 12U);
+    } else {
+        OLED_ShowString(54U, 32U, (u8 *)" IMU:", 12U);
+        OLED_ShowNum(84U, 32U, ATK_MS6DSV_GetStatus(), 1U, 12U);
+    }
 
     display_clear_row(48U);
     OLED_ShowString(0U, 48U, (u8 *)"GYRO:", 12U);
@@ -151,6 +173,11 @@ static void process_buttons(uint32_t now_ms)
     ChassisState state = ChassisController_GetState();
     uint8_t idle = (state == CHASSIS_WAIT) ||
         (state == CHASSIS_COMPLETE) || (state == CHASSIS_ERROR);
+
+    /* 校准完成前不允许切换模式或启动车辆。 */
+    if (ImuHeading_IsReady() == 0U) {
+        return;
+    }
 
     if ((button_pressed_event(&g_mode_button) != 0U) &&
         (idle != 0U)) {
