@@ -19,7 +19,7 @@
  * 位置预测和速度环，否则旧速度会让控制器误以为小球仍在运动。
  */
 #define SPEED_SAMPLE_STALE_MS          (200UL)
-#define OLED_UPDATE_PERIOD_MS          (250UL)
+#define OLED_UPDATE_PERIOD_MS          (245UL)
 #define MOTOR_FEEDBACK_QUERY_MS        (40UL)
 #define MOTOR_STARTUP_QUERY_MS         (20UL)
 #define MOTOR_COMMAND_PERIOD_MS        (40UL)
@@ -48,7 +48,7 @@
 /* 视觉位置数据及旋钮目标值允许的最大值。 */
 #define POSITION_MAX                   (500U)
 /* 上电后的默认目标位置；按下旋钮也会恢复到这个值。 */
-#define POSITION_DEFAULT_TARGET        (250U)
+#define POSITION_DEFAULT_TARGET        (245U)
 /* 旋钮每转动一格，目标位置增加或减少的数值。 */
 #define POSITION_TARGET_STEP           (1)
 
@@ -57,37 +57,37 @@
  * 允许惯性越过360，但370开始强制回拉，375为硬保护线。
  */
 /* 历史起点窗口参数；当前按键启动不检查此窗口，仍保留以兼容原工程。 */
-#define SEQUENCE_START_MIN             (235U)
-#define SEQUENCE_START_MAX             (245U)
+#define SEQUENCE_START_MIN             (240U)
+#define SEQUENCE_START_MAX             (250U)
 /* 第1段的视觉坐标目标：按键后小球从约250向坐标增大方向运动到360。 */
-#define SEQUENCE_FIRST_TARGET          (360U)
+#define SEQUENCE_FIRST_TARGET          (130U)
 /* 第2段及最终保持的视觉坐标目标：到360后立即反向，最终稳定在125。 */
-#define SEQUENCE_FINAL_TARGET          (125U)
+#define SEQUENCE_FINAL_TARGET          (350U)
 /*
  * 第1段到达容差，单位为视觉坐标值。小球向360单向运动时，C>=355便切换回程；
  * 这样即使某一帧从354直接跳到366，也不会漏掉换向，实际允许范围为360±5。
  */
-#define SEQUENCE_FIRST_TOLERANCE       (6U)
+#define SEQUENCE_FIRST_TOLERANCE       (22U)
 /* 历史“起点稳定帧数”参数；当前按键启动流程不使用，保留但不参与判断。 */
 #define SEQUENCE_START_STABLE_CYCLES   (5U)
 /* 在125±5内且低速时，必须连续满足5个新的视觉位置帧才确认最终保持。 */
 #define SEQUENCE_FINAL_STABLE_CYCLES   (5U)
 /* 最终保持的位置容差，单位为视觉坐标值，允许范围为120~130。 */
-#define SEQUENCE_FINAL_TOLERANCE       (5U)
-/* 返回125阶段若因惯性仍越过370，开始强制限制为负方向回拉角。 */
-#define SEQUENCE_GUARD_POSITION        (370U)
+#define SEQUENCE_FINAL_TOLERANCE       (7U)
+/* 返回337阶段若因惯性仍越过370，开始强制限制为负方向回拉角。 */
+#define SEQUENCE_GUARD_POSITION        (120U)
 /* 返回125阶段越过375时，跳过普通PID斜率限制并直接下发硬回拉角。 */
-#define SEQUENCE_HARD_LIMIT_POSITION   (375U)
+#define SEQUENCE_HARD_LIMIT_POSITION   (115U)
 /* C>=370时允许的最大管角，负号表示朝坐标减小方向拉回。单位：度。 */
-#define SEQUENCE_GUARD_ANGLE_DEG       (-4.0f)
+#define SEQUENCE_GUARD_ANGLE_DEG       (4.0f)
 /* C>=375时直接使用的安全回拉管角，力度大于普通保护角。单位：度。 */
-#define SEQUENCE_HARD_GUARD_ANGLE_DEG  (-5.0f)
+#define SEQUENCE_HARD_GUARD_ANGLE_DEG  (5.0f)
 /* 360后反向时每20ms允许的最大管角变化量，帮助快速撤销原正向推力。单位：度/20ms。 */
 #define SEQUENCE_REVERSE_SLEW_DEG      (0.55f)
 /* 位置死区：|目标位置-当前位置|不超过该值时，目标速度置零，防止目标附近来回动作。 */
 /* 只在非常接近目标时锁定；误差超过2立即恢复缓慢调整。 */
-#define POSITION_DEADBAND              (10.0f)
-#define POSITION_DEADBAND_EXIT         (10.0f)
+#define POSITION_DEADBAND              (8.0f)
+#define POSITION_DEADBAND_EXIT         (8.0f)
 /* 在位置死区内且|CS|小于该值时，直接保持上电记录的水平零角，不再继续PID微调。 */
 #define DEADBAND_LEVEL_STOP_SPEED      (10.0f)
 /* 只有球速足够低并进入±1时才判定到达，防止高速穿过目标时过早停止控制。 */
@@ -103,12 +103,12 @@
  * 远距离控制：运动时适度放大PID角度；静止时保证管角超过实测静摩擦阈值。
  * 最低角只在球静止时使用，检测到运动后立即恢复速度闭环输出。
  */
-#define POSITION_FAR_ZONE              (20.0f) /* |T-C|大于50进入强驱动区 */
-#define PIPE_FAR_ANGLE_GAIN            (1.67f) /* 远距离运动中放大速度环角度 */
+#define POSITION_FAR_ZONE              (7.0f) /* |T-C|大于50进入强驱动区 */
+#define PIPE_FAR_ANGLE_GAIN            (1.7f) /* 远距离运动中放大速度环角度 */
 #define PIPE_FAR_POSITIVE_MIN_DEG      (2.50f) /* 远距离静止时正方向最低启动角 */
 #define PIPE_FAR_NEGATIVE_MIN_DEG      (2.50f) /* 远距离静止时负方向最低启动角 */
 /* 未到目标但球已静止、target_speed又接近0时使用的小恢复速度。 */
-#define POSITION_RECOVERY_MIN_SPEED    (16.0f)
+#define POSITION_RECOVERY_MIN_SPEED    (30.0f)
 /* 每20ms允许目标速度改变的最大值，避免进入死区时从PID输出硬切到0。 */
 #define TARGET_SPEED_SLEW_PER_CYCLE    (4.0f)
 /*
@@ -124,9 +124,9 @@
 /* 位置比例系数：误差越大，要求的目标速度越大；过大会过冲和来回摆动，过小则响应慢。 */
 #define POSITION_KP                    (2.0f)
 /* 位置积分系数：消除长期位置偏差；过大会积分累积并导致明显过冲，通常只使用很小数值。 */
-#define POSITION_KI                    (0.04f)
+#define POSITION_KI                    (0.03f)
 /* 位置微分系数：根据误差变化提前减速、增加阻尼；过大会放大位置噪声并造成电机抖动。 */
-#define POSITION_KD                    (0.01f)
+#define POSITION_KD                    (0.004f)
 /* 位置外环最大输出，即 target_speed 的绝对值上限；越大允许7小球移动得越快，也越容易冲过目标。 */
 #define POSITION_MAX_SPEED             (70.0f)
 /* 位置环积分累计上限，用于防止长时间大误差造成积分饱和；不是速度或角度上限。 */
@@ -137,24 +137,24 @@
  * 它决定水管需要倾斜多少来使小球速度跟随位置外环的要求。
  */
 /* 速度比例系数：速度误差对应的即时倾角；增大可提高动作幅度，过大会造成速度震荡。 */
-#define SPEED_KP                       (0.06f)
+#define SPEED_KP                       (0.07f)
 /* 速度积分系数：补偿摩擦、坡度等造成的长期速度不足；过大会持续加大倾角并导致过冲。 */
 #define SPEED_KI                       (0.01f)
 /* 速度微分系数：抑制速度突然变化；速度反馈噪声较大，因此通常只能使用很小数值。 */
 #define SPEED_KD                       (0.01f)
 /* 速度内环最终输出的机械管角上限，单位为度；同时限制正、负两个方向为 ±该数值。 */
-#define PIPE_MAX_ANGLE_DEG             (11.5f)
+#define PIPE_MAX_ANGLE_DEG             (15.0f)
 /*
  * 负管角方向的机构力度补偿：1.0表示不补偿，数值越大，靠近500一侧的回拉幅度越大。
  * 补偿后的角度仍会被 PIPE_MAX_ANGLE_DEG 限制，不会突破机械角度上限。
  */
 #define PIPE_NEGATIVE_ANGLE_GAIN       (1.00f)
 /* 往0方向使用负管角，单独限制该方向的最大幅度，避免下降方向动作过大。 */
-#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (10.0f)
+#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (15.0f)
 /* 靠近目标时分方向限制管角；正方向需要更强制动力，负方向保持原限制。 */
-#define PIPE_NEAR_ZONE                 (20.0f)
-#define PIPE_NEAR_POSITIVE_MAX_DEG     (2.3f)
-#define PIPE_NEAR_NEGATIVE_MAX_DEG     (2.2f)
+#define PIPE_NEAR_ZONE                 (22.0f)
+#define PIPE_NEAR_POSITIVE_MAX_DEG     (1.8f)
+#define PIPE_NEAR_NEGATIVE_MAX_DEG     (1.7f)
 /*
  * 实测静摩擦不对称：往500方向约1°才能可靠启动，新的零点下往0方向需超过1.02°。
  * 两个数值只在球静止且仍在目标外时使用，运动后立即交回速度PID。
@@ -181,8 +181,8 @@
 #define EMM_MOVE_ACCELERATION          (10U)
 #define EMM_MIN_COMMAND_ANGLE_DEG      (0.12f)
 /* 电机正负管角对应的方向；若机构安装方向变化，应成对交换0U和1U。 */
-#define EMM_DIRECTION_POSITIVE         (0U)
-#define EMM_DIRECTION_NEGATIVE         (1U)
+#define EMM_DIRECTION_POSITIVE         (1U)
+#define EMM_DIRECTION_NEGATIVE         (0U)
 
 #define FRAME_SIZE                     (7U)
 #define FRAME_SOF_1                    (0xAAU)
@@ -674,7 +674,7 @@ static void OLED_ShowModeMenu(void)
     OLED_ShowString(0U, 32U,
         (u8 *)((g_new_selected_mode == NEW_MODE_CURRENT_SEQUENCE) ? ">" : " "),
         12U);
-    OLED_ShowString(12U, 32U, (u8 *)"2 360 TO 125", 12U);
+    OLED_ShowString(12U, 32U, (u8 *)"2 130 TO 350", 12U);
 
     OLED_ShowString(0U, 48U,
         (u8 *)((g_new_selected_mode == NEW_MODE_ENCODER_TARGET) ? ">" : " "),
@@ -906,8 +906,8 @@ static void Ball_SequenceUpdate(void)
          * 向360运动时进入360-5即可认为到达。由于本阶段只会向增大方向运动，
          * 使用下边界触发可避免视觉单帧跳过360+5时错过换向机会。
          */
-        if (current_position >=
-            (SEQUENCE_FIRST_TARGET - SEQUENCE_FIRST_TOLERANCE)) {
+        if (current_position <=
+            (SEQUENCE_FIRST_TARGET + SEQUENCE_FIRST_TOLERANCE)) {
             /* 到达360±5范围后直接反向；清除上一阶段的正向积分和目标速度。 */
             g_sequence_state = BALL_SEQUENCE_TO_125;
             target_position = SEQUENCE_FINAL_TARGET;
@@ -1055,7 +1055,7 @@ static void Ball_ControlUpdate(void)
      * 该例外只用于S1；返回125及最终保持仍完整沿用原死区和低速判定。
      */
     if ((g_sequence_state == BALL_SEQUENCE_TO_360) &&
-        (current_position < SEQUENCE_FIRST_TARGET)) {
+        (current_position > SEQUENCE_FIRST_TARGET)) {
         g_position_locked = 0U;
         in_deadband = 0U;
     }
@@ -1216,12 +1216,12 @@ static void Ball_ControlUpdate(void)
      * 普通斜率直接给硬保护角；仅在返回125阶段生效，不改变正常PID算法。
      */
     if ((g_sequence_state >= BALL_SEQUENCE_TO_125) &&
-        (current_position >= SEQUENCE_GUARD_POSITION) &&
-        (desired_pipe_angle > SEQUENCE_GUARD_ANGLE_DEG)) {
+        (current_position <= SEQUENCE_GUARD_POSITION) &&
+        (desired_pipe_angle < SEQUENCE_GUARD_ANGLE_DEG)) {
         desired_pipe_angle = SEQUENCE_GUARD_ANGLE_DEG;
     }
     if ((g_sequence_state >= BALL_SEQUENCE_TO_125) &&
-        (current_position >= SEQUENCE_HARD_LIMIT_POSITION)) {
+        (current_position <= SEQUENCE_HARD_LIMIT_POSITION)) {
         pipe_angle = SEQUENCE_HARD_GUARD_ANGLE_DEG;
         Motor_SetAngle(pipe_angle);
         return;
@@ -1239,8 +1239,8 @@ static void Ball_ControlUpdate(void)
         pipe_angle_slew = PIPE_ANGLE_BRAKE_SLEW;
     }
     if ((g_sequence_state == BALL_SEQUENCE_TO_125) &&
-        (current_position >= SEQUENCE_FIRST_TARGET) &&
-        (pipe_angle > desired_pipe_angle)) {
+        (current_position <= SEQUENCE_FIRST_TARGET) &&
+        (pipe_angle < desired_pipe_angle)) {
         /* 360后的反向必须比普通微调更快，避免旧正角继续推动小球。 */
         pipe_angle_slew = SEQUENCE_REVERSE_SLEW_DEG;
     }
