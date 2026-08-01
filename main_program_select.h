@@ -9,7 +9,7 @@
 /*
  * 在这里选择烧录后运行哪个主程序：
  * MAIN_PROGRAM_CURRENT     = 完全使用修改前的当前main逻辑；
- * MAIN_PROGRAM_THREE_MODES = 使用旋钮选择三种工作模式的新main逻辑。
+ * MAIN_PROGRAM_THREE_MODES = 使用旋钮选择四种工作模式的新main逻辑（名称为历史兼容保留）。
  */
 #define MAIN_PROGRAM_SELECT            MAIN_PROGRAM_THREE_MODES
 

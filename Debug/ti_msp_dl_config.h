@@ -142,6 +142,22 @@ extern "C" {
 #define LLM_UART_BAUD_RATE                                              (115200)
 #define LLM_UART_IBRD_32_MHZ_115200_BAUD                                    (17)
 #define LLM_UART_FBRD_32_MHZ_115200_BAUD                                    (23)
+/* Defines for VEHICLE_UART */
+#define VEHICLE_UART_INST                                                  UART3
+#define VEHICLE_UART_INST_FREQUENCY                                     32000000
+#define VEHICLE_UART_INST_IRQHandler                            UART3_IRQHandler
+#define VEHICLE_UART_INST_INT_IRQN                                UART3_INT_IRQn
+#define GPIO_VEHICLE_UART_RX_PORT                                          GPIOA
+#define GPIO_VEHICLE_UART_TX_PORT                                          GPIOA
+#define GPIO_VEHICLE_UART_RX_PIN                                  DL_GPIO_PIN_13
+#define GPIO_VEHICLE_UART_TX_PIN                                  DL_GPIO_PIN_14
+#define GPIO_VEHICLE_UART_IOMUX_RX                               (IOMUX_PINCM35)
+#define GPIO_VEHICLE_UART_IOMUX_TX                               (IOMUX_PINCM36)
+#define GPIO_VEHICLE_UART_IOMUX_RX_FUNC                IOMUX_PINCM35_PF_UART3_RX
+#define GPIO_VEHICLE_UART_IOMUX_TX_FUNC                IOMUX_PINCM36_PF_UART3_TX
+#define VEHICLE_UART_BAUD_RATE                                          (115200)
+#define VEHICLE_UART_IBRD_32_MHZ_115200_BAUD                                (17)
+#define VEHICLE_UART_FBRD_32_MHZ_115200_BAUD                                (23)
 
 
 
@@ -171,6 +187,7 @@ void SYSCFG_DL_OLED_init(void);
 void SYSCFG_DL_PRINT_init(void);
 void SYSCFG_DL_MOTOR_UART_init(void);
 void SYSCFG_DL_LLM_UART_init(void);
+void SYSCFG_DL_VEHICLE_UART_init(void);
 
 
 bool SYSCFG_DL_saveConfiguration(void);

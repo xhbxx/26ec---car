@@ -52,14 +52,38 @@
 /* 旋钮每转动一格，目标位置增加或减少的数值。 */
 #define POSITION_TARGET_STEP           (1)
 
-/* Mod4/Mod5：小车全程保持同方向恒定加速度，不设置减速补偿段。 */
-#define MODE4_MOTION_COMPENSATION_DEG  (2.40f)
-/* Mod5 与Mod4使用相同的补偿角和触发逻辑。 */
-#define MODE5_MOTION_COMPENSATION_DEG  (2.40f)
-/* 检测到第一次运动后延迟2秒，再开始输出车辆补偿角。 */
-#define MODE_COMP_DELAY_MS              (2000UL)
-/* Mod4/Mod5只有球偏离默认位置超过该值时才启动位置回正。 */
-#define MODE_COMP_RETURN_ERROR_LIMIT   (100.0f)
+/* 车辆状态帧超过50ms未更新时立即撤销主动补偿，符合发送协议的保护要求。 */
+#define VEHICLE_FRAME_TIMEOUT_MS        (50UL)
+#define VEHICLE_FRAME_SIZE              (48U)
+#define VEHICLE_FRAME_VERSION           (0x01U)
+#define VEHICLE_FRAME_LENGTH_FIELD      (0x30U)
+/* 48字节车辆帧byte12的状态标志：bit2运行、bit4弯道、bit6编码器速度有效。 */
+#define VEHICLE_FLAG_RUNNING            (1U << 2U)
+#define VEHICLE_FLAG_CURVE              (1U << 4U)
+#define VEHICLE_FLAG_ENCODER_VALID      (1U << 6U)
+/* 小角度换算：angle(deg)=acceleration(mm/s^2)*180/(pi*9806.65)。 */
+#define VEHICLE_ANGLE_PER_MMPS2_DEG     (0.0058426f)
+/*
+ * 车辆加速度到管角的直线幅度增益：82mm/s^2时约输出4.8度。
+ * 增益8偏小、15偏大，因此折中为10；后续只需调此值改变直线整体幅度。
+ */
+#define VEHICLE_ACCEL_ANGLE_GAIN        (10.0f)
+/* 实际加速度相对目标加速度的修正比例；0只用前馈，1只用实际加速度。 */
+#define VEHICLE_ACTUAL_ACCEL_BLEND      (0.25f)
+/* 车辆补偿角单独限幅；仍低于电机控制的PIPE_MAX_ANGLE_DEG机械总限幅。 */
+#define VEHICLE_COMP_MAX_ANGLE_DEG      (14.0f)
+/*
+ * 车辆补偿每20ms允许改变的最大角度。车辆加速度变化很快，不能继续沿用
+ * 小球位置PID的慢斜率；当前取1.2度，避免上次2度造成回调动作过猛。
+ */
+#define VEHICLE_COMP_SLEW_DEG           (1.2f)
+/* 目标角跨过机械零点时使用更慢的回调斜率，减少正负方向来回过调。 */
+#define VEHICLE_COMP_REVERSE_SLEW_DEG   (0.7f)
+/* 弯道中纵向IMU轴会混入侧向加速度，BC/DA弯道使用直线补偿角的65%。 */
+#define VEHICLE_CURVE_ANGLE_SCALE       (0.65f)
+/* IMU纵向轴：0=X、1=Y、2=Z；安装方向相反时把SIGN改成-1。 */
+#define VEHICLE_IMU_LONGITUDINAL_AXIS   (0U)
+#define VEHICLE_IMU_LONGITUDINAL_SIGN   (1.0f)
 
 /*
  * 编码器按键测试顺序：球手动放在C≈250后，按下编码器，先向360运动；到达360±5后不停车，立即反向前往125。
@@ -131,7 +155,7 @@
  * 调参时先令 POSITION_KI=0，调整 KP、KD，最后再少量增加 KI。
  */
 /* 位置比例系数：误差越大，要求的目标速度越大；过大会过冲和来回摆动，过小则响应慢。 */
-#define POSITION_KP                    (2.1f)
+#define POSITION_KP                    (2.2f)
 /* 位置积分系数：消除长期位置偏差；过大会积分累积并导致明显过冲，通常只使用很小数值。 */
 #define POSITION_KI                    (0.03f)
 /* 位置微分系数：根据误差变化提前减速、增加阻尼；过大会放大位置噪声并造成电机抖动。 */
@@ -146,20 +170,20 @@
  * 它决定水管需要倾斜多少来使小球速度跟随位置外环的要求。
  */
 /* 速度比例系数：速度误差对应的即时倾角；增大可提高动作幅度，过大会造成速度震荡。 */
-#define SPEED_KP                       (0.07f)
+#define SPEED_KP                       (0.08f)
 /* 速度积分系数：补偿摩擦、坡度等造成的长期速度不足；过大会持续加大倾角并导致过冲。 */
 #define SPEED_KI                       (0.01f)
 /* 速度微分系数：抑制速度突然变化；速度反馈噪声较大，因此通常只能使用很小数值。 */
 #define SPEED_KD                       (0.01f)
 /* 速度内环最终输出的机械管角上限，单位为度；同时限制正、负两个方向为 ±该数值。 */
-#define PIPE_MAX_ANGLE_DEG             (15.0f)
+#define PIPE_MAX_ANGLE_DEG             (21.0f)
 /*
  * 负管角方向的机构力度补偿：1.0表示不补偿，数值越大，靠近500一侧的回拉幅度越大。
  * 补偿后的角度仍会被 PIPE_MAX_ANGLE_DEG 限制，不会突破机械角度上限。
  */
 #define PIPE_NEGATIVE_ANGLE_GAIN       (1.00f)
 /* 往0方向使用负管角，单独限制该方向的最大幅度，避免下降方向动作过大。 */
-#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (15.0f)
+#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (21.0f)
 /* 靠近目标时分方向限制管角；正方向需要更强制动力，负方向保持原限制。 */
 #define PIPE_NEAR_ZONE                 (22.0f)
 #define PIPE_NEAR_POSITIVE_MAX_DEG     (1.8f)
@@ -206,15 +230,35 @@ typedef enum
     BALL_SEQUENCE_HOLD_125
 } BallSequenceState;
 
-/** 新主程序中的三种工作模式，数值与OLED菜单编号保持一致。 */
+/** 新主程序中的四种工作模式，数值与OLED菜单编号保持一致。 */
 typedef enum
 {
     NEW_MODE_HOLD_250 = 1,
     NEW_MODE_CURRENT_SEQUENCE = 2,
     NEW_MODE_ENCODER_TARGET = 3,
-    NEW_MODE_CAR_COMP_1 = 4,
-    NEW_MODE_CAR_COMP_2 = 5
+    NEW_MODE_VEHICLE_COMP = 4
 } NewOperatingMode;
+
+/** 解码后的48字节车辆状态；各字段单位与发送协议保持一致。 */
+typedef struct
+{
+    uint16_t sequence;
+    uint32_t timestamp_ms;
+    uint8_t mode;
+    uint8_t state;
+    uint8_t flags;
+    int16_t target_speed_mmps;
+    int16_t actual_speed_mmps;
+    int16_t left_speed_mmps;
+    int16_t right_speed_mmps;
+    int16_t target_accel_mmps2;
+    int16_t encoder_accel_mmps2;
+    int16_t imu_accel_mg[3];
+    int32_t yaw_rate_mdps;
+    int32_t heading_mdeg;
+    int32_t distance_mm;
+    int16_t steering_half_diff_mmps;
+} VehicleTelemetry;
 
 volatile uint16_t current_position = 0U;
 volatile uint16_t target_position = POSITION_DEFAULT_TARGET;
@@ -262,13 +306,23 @@ static uint8_t g_sequence_start_requested = 0U;
 
 /* 新主程序菜单状态；旧主程序Current_Main不读取这些变量。 */
 static NewOperatingMode g_new_selected_mode = NEW_MODE_HOLD_250;
-static uint32_t g_car_comp_start_ms = 0U;
-static uint8_t g_car_comp_motion_started = 0U;
-static int8_t g_car_comp_direction = 0;
 static uint8_t g_new_mode_confirmed = 0U;
 static uint8_t g_new_mode_input_ready = 0U;
 static uint8_t g_new_target_confirmed = 0U;
 static uint16_t g_new_encoder_target = POSITION_DEFAULT_TARGET;
+
+static VehicleTelemetry g_vehicle;
+static uint8_t g_vehicle_frame[VEHICLE_FRAME_SIZE];
+static uint8_t g_vehicle_frame_index = 0U;
+static uint8_t g_vehicle_frame_valid = 0U;
+static uint8_t g_vehicle_sequence_initialized = 0U;
+static uint16_t g_vehicle_last_sequence = 0U;
+static uint32_t g_vehicle_lost_frames = 0U;
+static uint32_t g_vehicle_last_frame_ms = 0U;
+static float g_vehicle_imu_zero_mg = 0.0f;
+static float g_vehicle_imu_low_mmps2 = 0.0f;
+static uint8_t g_vehicle_imu_zero_valid = 0U;
+static float g_vehicle_fused_accel_mmps2 = 0.0f;
 
 /* [llm-pid-tuner] SETPOINT 文本指令接收状态。 */
 static char g_llm_command[20];
@@ -673,7 +727,7 @@ static void OLED_ShowControlInfo(void);
  */
 static void OLED_ShowModeMenu(void)
 {
-    uint8_t second_page = (g_new_selected_mode >= NEW_MODE_CAR_COMP_1)
+    uint8_t second_page = (g_new_selected_mode >= NEW_MODE_VEHICLE_COMP)
         ? 1U : 0U;
 
     /*
@@ -686,15 +740,11 @@ static void OLED_ShowModeMenu(void)
 
     if (second_page != 0U) {
         OLED_ShowString(0U, 16U,
-            (u8 *)((g_new_selected_mode == NEW_MODE_CAR_COMP_1) ? ">" : " "),
+            (u8 *)((g_new_selected_mode == NEW_MODE_VEHICLE_COMP) ? ">" : " "),
             12U);
-        OLED_ShowString(12U, 16U, (u8 *)"4 CAR COMP A", 12U);
-
-        OLED_ShowString(0U, 32U,
-            (u8 *)((g_new_selected_mode == NEW_MODE_CAR_COMP_2) ? ">" : " "),
-            12U);
-        OLED_ShowString(12U, 32U, (u8 *)"5 CAR COMP B", 12U);
-        OLED_ShowString(12U, 48U, (u8 *)"ROTATE TO PAGE", 12U);
+        OLED_ShowString(12U, 16U, (u8 *)"4 VEHICLE COMP", 12U);
+        OLED_ShowString(12U, 32U, (u8 *)"48B UART3 DATA", 12U);
+        OLED_ShowString(12U, 48U, (u8 *)"PA13 RX 115200", 12U);
         g_oled_refresh_page = 0U;
         return;
     }
@@ -730,16 +780,219 @@ static void NewMode_ResetControlState(void)
     g_sequence_state = BALL_SEQUENCE_WAIT_START;
     g_sequence_stable_cycles = 0U;
     g_sequence_start_requested = 0U;
-    g_car_comp_start_ms = g_milliseconds;
-    g_car_comp_motion_started = 0U;
-    g_car_comp_direction = 0;
     Motor_SetAngle(0.0f);
+}
+
+/** 按小端序读取协议中的uint16。 */
+static uint16_t Vehicle_ReadU16(const uint8_t *data)
+{
+    return (uint16_t)data[0] | ((uint16_t)data[1] << 8U);
+}
+
+/** 按小端序读取协议中的有符号int16补码。 */
+static int16_t Vehicle_ReadI16(const uint8_t *data)
+{
+    return (int16_t)Vehicle_ReadU16(data);
+}
+
+/** 按小端序读取协议中的uint32。 */
+static uint32_t Vehicle_ReadU32(const uint8_t *data)
+{
+    return (uint32_t)data[0] |
+        ((uint32_t)data[1] << 8U) |
+        ((uint32_t)data[2] << 16U) |
+        ((uint32_t)data[3] << 24U);
+}
+
+/** 按小端序读取协议中的有符号int32补码。 */
+static int32_t Vehicle_ReadI32(const uint8_t *data)
+{
+    return (int32_t)Vehicle_ReadU32(data);
+}
+
+/** 计算协议指定的CRC16-Modbus，范围由调用者传入。 */
+static uint16_t Vehicle_CalculateCrc16(
+    const uint8_t *data, uint8_t length)
+{
+    uint16_t crc = 0xFFFFU;
+    uint8_t index;
+
+    for (index = 0U; index < length; index++) {
+        uint8_t bit;
+        crc ^= data[index];
+        for (bit = 0U; bit < 8U; bit++) {
+            crc = ((crc & 1U) != 0U)
+                ? (uint16_t)((crc >> 1U) ^ 0xA001U)
+                : (uint16_t)(crc >> 1U);
+        }
+    }
+    return crc;
+}
+
+/** 返回当前安装定义下的IMU纵向轴原始值，单位mg。 */
+static float Vehicle_GetLongitudinalImuMg(const VehicleTelemetry *vehicle)
+{
+    uint8_t axis = VEHICLE_IMU_LONGITUDINAL_AXIS;
+    if (axis > 2U) {
+        axis = 0U;
+    }
+    return (float)vehicle->imu_accel_mg[axis] *
+        VEHICLE_IMU_LONGITUDINAL_SIGN;
+}
+
+/**
+ * 接收一帧有效车辆数据后更新融合加速度。
+ * 目标加速度负责提前响应；编码器负责低频实际加速度；IMU高通量负责快速变化。
+ */
+static void Vehicle_AcceptFrame(void)
+{
+    const uint8_t *frame = g_vehicle_frame;
+    uint16_t received_crc = Vehicle_ReadU16(&frame[46]);
+    uint16_t calculated_crc = Vehicle_CalculateCrc16(&frame[2], 44U);
+    float imu_mg;
+    float imu_dynamic_mmps2 = 0.0f;
+    float actual_accel;
+
+    if ((frame[2] != VEHICLE_FRAME_VERSION) ||
+        (frame[3] != VEHICLE_FRAME_LENGTH_FIELD) ||
+        ((frame[10] != 2U) && (frame[10] != 4U) && (frame[10] != 5U)) ||
+        (frame[13] != 0U) ||
+        (received_crc != calculated_crc)) {
+        return;
+    }
+
+    g_vehicle.sequence = Vehicle_ReadU16(&frame[4]);
+    g_vehicle.timestamp_ms = Vehicle_ReadU32(&frame[6]);
+    g_vehicle.mode = frame[10];
+    g_vehicle.state = frame[11];
+    g_vehicle.flags = frame[12];
+    g_vehicle.target_speed_mmps = Vehicle_ReadI16(&frame[14]);
+    g_vehicle.actual_speed_mmps = Vehicle_ReadI16(&frame[16]);
+    g_vehicle.left_speed_mmps = Vehicle_ReadI16(&frame[18]);
+    g_vehicle.right_speed_mmps = Vehicle_ReadI16(&frame[20]);
+    g_vehicle.target_accel_mmps2 = Vehicle_ReadI16(&frame[22]);
+    g_vehicle.encoder_accel_mmps2 = Vehicle_ReadI16(&frame[24]);
+    g_vehicle.imu_accel_mg[0] = Vehicle_ReadI16(&frame[26]);
+    g_vehicle.imu_accel_mg[1] = Vehicle_ReadI16(&frame[28]);
+    g_vehicle.imu_accel_mg[2] = Vehicle_ReadI16(&frame[30]);
+    g_vehicle.yaw_rate_mdps = Vehicle_ReadI32(&frame[32]);
+    g_vehicle.heading_mdeg = Vehicle_ReadI32(&frame[36]);
+    g_vehicle.distance_mm = Vehicle_ReadI32(&frame[40]);
+    g_vehicle.steering_half_diff_mmps = Vehicle_ReadI16(&frame[44]);
+
+    if (g_vehicle_sequence_initialized != 0U) {
+        uint16_t sequence_delta =
+            (uint16_t)(g_vehicle.sequence - g_vehicle_last_sequence);
+        if (sequence_delta > 1U) {
+            g_vehicle_lost_frames += (uint32_t)(sequence_delta - 1U);
+        }
+    } else {
+        g_vehicle_sequence_initialized = 1U;
+    }
+    g_vehicle_last_sequence = g_vehicle.sequence;
+
+    imu_mg = Vehicle_GetLongitudinalImuMg(&g_vehicle);
+    /* 车辆未运行时缓慢记录安装角和重力在纵向轴上的静态零点。 */
+    if ((g_vehicle.flags & VEHICLE_FLAG_RUNNING) == 0U) {
+        if (g_vehicle_imu_zero_valid == 0U) {
+            g_vehicle_imu_zero_mg = imu_mg;
+            g_vehicle_imu_zero_valid = 1U;
+        } else {
+            g_vehicle_imu_zero_mg +=
+                0.05f * (imu_mg - g_vehicle_imu_zero_mg);
+        }
+    }
+
+    actual_accel = (float)g_vehicle.target_accel_mmps2;
+    if ((g_vehicle.flags & VEHICLE_FLAG_ENCODER_VALID) != 0U) {
+        actual_accel = (float)g_vehicle.encoder_accel_mmps2;
+    }
+    if (((g_vehicle.flags & (1U << 1U)) != 0U) &&
+        (g_vehicle_imu_zero_valid != 0U)) {
+        imu_dynamic_mmps2 = (imu_mg - g_vehicle_imu_zero_mg) * 9.80665f;
+        /* 取IMU高频分量并叠加编码器低频加速度，避免重力零偏长期进入控制角。 */
+        g_vehicle_imu_low_mmps2 +=
+            0.02f * (imu_dynamic_mmps2 - g_vehicle_imu_low_mmps2);
+        actual_accel += imu_dynamic_mmps2 - g_vehicle_imu_low_mmps2;
+    }
+    g_vehicle_fused_accel_mmps2 = actual_accel;
+    g_vehicle_last_frame_ms = g_milliseconds;
+    g_vehicle_frame_valid = 1U;
+}
+
+/** 喂入一个UART3字节，搜索AA55并在完整48字节后校验CRC。 */
+static void Vehicle_PushByte(uint8_t value)
+{
+    if (g_vehicle_frame_index == 0U) {
+        if (value == 0xAAU) {
+            g_vehicle_frame[g_vehicle_frame_index++] = value;
+        }
+        return;
+    }
+    if (g_vehicle_frame_index == 1U) {
+        if (value == 0x55U) {
+            g_vehicle_frame[g_vehicle_frame_index++] = value;
+        } else {
+            g_vehicle_frame_index = (value == 0xAAU) ? 1U : 0U;
+        }
+        return;
+    }
+
+    g_vehicle_frame[g_vehicle_frame_index++] = value;
+    if (g_vehicle_frame_index >= VEHICLE_FRAME_SIZE) {
+        g_vehicle_frame_index = 0U;
+        Vehicle_AcceptFrame();
+    }
+}
+
+/** 非阻塞处理UART3已接收的车辆数据，不占用20ms小球控制周期。 */
+static void Vehicle_UART_Poll(void)
+{
+    uint8_t received;
+    while (Vehicle_UART_ReadByte(&received) != 0U) {
+        Vehicle_PushByte(received);
+    }
+}
+
+/**
+ * 将车辆加速度换算为水管补偿角。
+ * 车辆正方向指向小球坐标0，所以正加速度对应负管角。
+ */
+static float Vehicle_GetCompensationAngle(void)
+{
+    float control_accel;
+    float angle;
+
+    if ((g_vehicle_frame_valid == 0U) ||
+        ((uint32_t)(g_milliseconds - g_vehicle_last_frame_ms) >
+         VEHICLE_FRAME_TIMEOUT_MS) ||
+        ((g_vehicle.mode != 4U) && (g_vehicle.mode != 5U)) ||
+        ((g_vehicle.flags & VEHICLE_FLAG_RUNNING) == 0U)) {
+        return 0.0f;
+    }
+
+    control_accel = (float)g_vehicle.target_accel_mmps2 +
+        VEHICLE_ACTUAL_ACCEL_BLEND *
+        (g_vehicle_fused_accel_mmps2 -
+         (float)g_vehicle.target_accel_mmps2);
+    angle = -control_accel * VEHICLE_ANGLE_PER_MMPS2_DEG *
+        VEHICLE_ACCEL_ANGLE_GAIN;
+    /* 发送端进入BC或DA弯道时会置byte12 bit4，直接按协议响应弯道。 */
+    if ((g_vehicle.flags & VEHICLE_FLAG_CURVE) != 0U) {
+        angle *= VEHICLE_CURVE_ANGLE_SCALE;
+    }
+    if (angle > VEHICLE_COMP_MAX_ANGLE_DEG) {
+        angle = VEHICLE_COMP_MAX_ANGLE_DEG;
+    } else if (angle < -VEHICLE_COMP_MAX_ANGLE_DEG) {
+        angle = -VEHICLE_COMP_MAX_ANGLE_DEG;
+    }
+    return angle;
 }
 
 /**
  * 新主程序的旋钮输入处理，每1ms调用一次。
  *
- * 未选择模式：旋转在1/2/3之间循环，按下确认并切换到数据界面。
+ * 未选择模式：旋转在1/2/3/4之间循环，按下确认并切换到数据界面。
  * 模式2：确认模式且松开第一次按键后，再按一次才启动原250->360->125流程。
  * 模式3：旋转以5为步长选择0~500目标，按下后锁定目标并开始闭环控制。
  */
@@ -751,12 +1004,12 @@ static void NewMode_ProcessEncoder(int8_t rotation, uint8_t poll_button)
     if (g_new_mode_confirmed == 0U) {
         if (rotation > 0) {
             g_new_selected_mode = (g_new_selected_mode >=
-                NEW_MODE_CAR_COMP_2) ? NEW_MODE_HOLD_250 :
+                NEW_MODE_VEHICLE_COMP) ? NEW_MODE_HOLD_250 :
                 (NewOperatingMode)((uint8_t)g_new_selected_mode + 1U);
             OLED_ShowModeMenu();
         } else if (rotation < 0) {
             g_new_selected_mode = (g_new_selected_mode <=
-                NEW_MODE_HOLD_250) ? NEW_MODE_CAR_COMP_2 :
+                NEW_MODE_HOLD_250) ? NEW_MODE_VEHICLE_COMP :
                 (NewOperatingMode)((uint8_t)g_new_selected_mode - 1U);
             OLED_ShowModeMenu();
         }
@@ -858,12 +1111,28 @@ static void OLED_ShowControlInfo(void)
         OLED_ShowString(54U, 32U, (u8 *)"----", 12U);
     }
 
-    OLED_ShowString(0U, 48U, (u8 *)"P:", 12U);
-    OLED_ShowNum(12U, 48U, kp, 3U, 12U);
-    OLED_ShowString(30U, 48U, (u8 *)" I:", 12U);
-    OLED_ShowNum(48U, 48U, ki, 3U, 12U);
-    OLED_ShowString(66U, 48U, (u8 *)" D:", 12U);
-    OLED_ShowNum(84U, 48U, kd, 3U, 12U);
+    if (g_new_selected_mode == NEW_MODE_VEHICLE_COMP) {
+        uint8_t vehicle_online = (uint8_t)((g_vehicle_frame_valid != 0U) &&
+            ((uint32_t)(g_milliseconds - g_vehicle_last_frame_ms) <=
+             VEHICLE_FRAME_TIMEOUT_MS));
+        OLED_ShowString(0U, 48U, (u8 *)"V:", 12U);
+        OLED_ShowString(12U, 48U,
+            (u8 *)(vehicle_online != 0U ? "O" :
+                (Vehicle_UART_GetErrorCount() != 0U ? "E" : "X")), 12U);
+        OLED_ShowString(24U, 48U, (u8 *)"M:", 12U);
+        OLED_ShowNum(36U, 48U, g_vehicle.mode, 1U, 12U);
+        OLED_ShowString(48U, 48U, (u8 *)"A:", 12U);
+        OLED_ShowSigned3(60U, 48U, (float)g_vehicle.target_accel_mmps2);
+        OLED_ShowString(84U, 48U, (u8 *)"F:", 12U);
+        OLED_ShowSigned3(96U, 48U, g_vehicle_fused_accel_mmps2);
+    } else {
+        OLED_ShowString(0U, 48U, (u8 *)"P:", 12U);
+        OLED_ShowNum(12U, 48U, kp, 3U, 12U);
+        OLED_ShowString(30U, 48U, (u8 *)" I:", 12U);
+        OLED_ShowNum(48U, 48U, ki, 3U, 12U);
+        OLED_ShowString(66U, 48U, (u8 *)" D:", 12U);
+        OLED_ShowNum(84U, 48U, kd, 3U, 12U);
+    }
     /* 这里只更新显存；主循环每个控制周期刷新一页，避免整屏阻塞控制。 */
     g_oled_refresh_page = 0U;
 }
@@ -984,42 +1253,33 @@ static void Ball_SequenceUpdate(void)
     }
 }
 
-/* Mod4/Mod5的补偿保持：不让位置环把球主动拉回默认位置，
- * 只输出运行补偿角，并在补偿结束后把水管缓慢回到水平零角。 */
+/* 车辆补偿模式：只输出由48字节车辆帧实时计算的补偿角。 */
 static void Ball_CarCompensationOnlyUpdate(void)
 {
-    float desired_angle = 0.0f;
+    float desired_angle = Vehicle_GetCompensationAngle();
     float change;
-    float compensation_angle;
+    float slew_limit = VEHICLE_COMP_SLEW_DEG;
 
     target_speed = 0.0f;
     PID_Reset(&g_position_pid);
     PID_Reset(&g_speed_pid);
-
-    if ((g_car_comp_motion_started == 0U) &&
-        (g_speed_valid != 0U) &&
-        (current_speed > SPEED_ZERO_DEADBAND ||
-         current_speed < -SPEED_ZERO_DEADBAND)) {
-        g_car_comp_motion_started = 1U;
-        g_car_comp_start_ms = g_milliseconds;
-        g_car_comp_direction = (current_speed > 0.0f) ? 1 : -1;
+    /* 超过50ms没有有效帧时直接撤销主动补偿并回到上电机械零角。 */
+    if ((g_vehicle_frame_valid == 0U) ||
+        ((uint32_t)(g_milliseconds - g_vehicle_last_frame_ms) >
+         VEHICLE_FRAME_TIMEOUT_MS)) {
+        pipe_angle = 0.0f;
+        Motor_SetAngle(0.0f);
+        return;
     }
-    if ((g_car_comp_motion_started != 0U) &&
-        ((uint32_t)(g_milliseconds - g_car_comp_start_ms) >=
-         MODE_COMP_DELAY_MS)) {
-        /* 延迟结束后直接输出完整角度，并一直保持。 */
-        compensation_angle =
-            (g_new_selected_mode == NEW_MODE_CAR_COMP_1)
-            ? MODE4_MOTION_COMPENSATION_DEG
-            : MODE5_MOTION_COMPENSATION_DEG;
-        desired_angle = compensation_angle * (float)g_car_comp_direction;
-    }
-
     change = desired_angle - pipe_angle;
-    if (change > PIPE_ANGLE_SLEW_PER_CYCLE) {
-        change = PIPE_ANGLE_SLEW_PER_CYCLE;
-    } else if (change < -PIPE_ANGLE_SLEW_PER_CYCLE) {
-        change = -PIPE_ANGLE_SLEW_PER_CYCLE;
+    if (((pipe_angle > 0.0f) && (desired_angle < 0.0f)) ||
+        ((pipe_angle < 0.0f) && (desired_angle > 0.0f))) {
+        slew_limit = VEHICLE_COMP_REVERSE_SLEW_DEG;
+    }
+    if (change > slew_limit) {
+        change = slew_limit;
+    } else if (change < -slew_limit) {
+        change = -slew_limit;
     }
     pipe_angle += change;
     Motor_SetAngle(pipe_angle);
@@ -1229,32 +1489,6 @@ static void Ball_ControlUpdate(void)
             (uint8_t)(in_deadband == 0U));
     }
 
-    /* Mod4/Mod5：小车全程恒定加速度时，球一旦开始移动就持续加入
-     * 同方向固定补偿；第一次触发采用较小幅度并在250ms内平滑升高，
-     * 避免第一帧速度跳变叠加补偿造成角度偏大。 */
-    if ((g_new_selected_mode == NEW_MODE_CAR_COMP_1) ||
-        (g_new_selected_mode == NEW_MODE_CAR_COMP_2)) {
-        float compensation_angle =
-            (g_new_selected_mode == NEW_MODE_CAR_COMP_1)
-            ? MODE4_MOTION_COMPENSATION_DEG
-            : MODE5_MOTION_COMPENSATION_DEG;
-
-        if ((g_car_comp_motion_started == 0U) &&
-            (g_speed_valid != 0U) &&
-            (absolute_current_speed > SPEED_ZERO_DEADBAND)) {
-            g_car_comp_motion_started = 1U;
-            g_car_comp_start_ms = g_milliseconds;
-            g_car_comp_direction = (control_speed > 0.0f) ? 1 : -1;
-        }
-        if (g_car_comp_motion_started != 0U &&
-            (uint32_t)(g_milliseconds - g_car_comp_start_ms) >=
-            MODE_COMP_DELAY_MS) {
-            /* 延迟结束后直接叠加完整补偿角，不再渐增。 */
-            desired_pipe_angle += compensation_angle *
-                (float)g_car_comp_direction;
-        }
-    }
-
     /* 往0方向使用负管角：降低该方向增益并单独限幅，避免动作幅度过大。 */
     if (desired_pipe_angle < 0.0f) {
         desired_pipe_angle *= PIPE_NEGATIVE_ANGLE_GAIN;
@@ -1367,6 +1601,7 @@ int Current_Main(void)
     SYSCFG_DL_init();
     LLM_UART_Init();
     Motor_UART_EnableRxInterrupt();
+    Vehicle_UART_EnableRxInterrupt();
     Bianma_Init();
     /*
      * CAM2位置帧改由UART2 RX中断先存入环形缓冲。
@@ -1403,6 +1638,7 @@ int Current_Main(void)
         uint32_t now;
 
         LLM_UART_Poll();
+        Vehicle_UART_Poll();
         while (UART_read_received_byte(&received) != 0U) {
             (void)Sensor_PushByte(received);
         }
@@ -1458,6 +1694,7 @@ int New_Main(void)
     SYSCFG_DL_init();
     LLM_UART_Init();
     Motor_UART_EnableRxInterrupt();
+    Vehicle_UART_EnableRxInterrupt();
     Bianma_Init();
     /* CAM2位置帧使用UART2中断环形缓冲，菜单和OLED刷新期间也不会停止收数。 */
     UART_EnableRxInterrupt();
@@ -1501,6 +1738,7 @@ int New_Main(void)
         uint32_t now;
 
         LLM_UART_Poll();
+        Vehicle_UART_Poll();
         while (UART_read_received_byte(&received) != 0U) {
             (void)Sensor_PushByte(received);
         }
@@ -1522,7 +1760,12 @@ int New_Main(void)
             g_last_control_ms += CONTROL_PERIOD_MS;
             control_executed = 1U;
 
-            if ((g_position_valid != 0U) &&
+            if ((g_new_mode_confirmed != 0U) &&
+                (g_new_selected_mode == NEW_MODE_VEHICLE_COMP)) {
+                /* 车辆补偿只依赖UART3车辆帧，不再依赖CAM2位置数据。 */
+                target_position = POSITION_DEFAULT_TARGET;
+                Ball_CarCompensationOnlyUpdate();
+            } else if ((g_position_valid != 0U) &&
                 ((uint32_t)(now - g_last_frame_ms) <= SENSOR_TIMEOUT_MS)) {
                 if (g_new_mode_confirmed == 0U) {
                     /* 菜单阶段只接收并显示位置，水管保持上电零角。 */
@@ -1532,20 +1775,6 @@ int New_Main(void)
                     /* 模式1：固定目标250，球被扰动后仍会由原双环PID拉回。 */
                     target_position = POSITION_DEFAULT_TARGET;
                     Ball_ControlUpdate();
-                } else if ((g_new_selected_mode == NEW_MODE_CAR_COMP_1) ||
-                    (g_new_selected_mode == NEW_MODE_CAR_COMP_2)) {
-                    float mode_error;
-                    target_position = POSITION_DEFAULT_TARGET;
-                    mode_error = (float)target_position -
-                        (float)current_position;
-                    if (mode_error > MODE_COMP_RETURN_ERROR_LIMIT ||
-                        mode_error < -MODE_COMP_RETURN_ERROR_LIMIT) {
-                        /* 偏离超过100才允许原位置环主动回正。 */
-                        Ball_ControlUpdate();
-                    } else {
-                        /* 偏离不超过100时只做加速度补偿，并回水平零角。 */
-                        Ball_CarCompensationOnlyUpdate();
-                    }
                 } else if (g_new_selected_mode ==
                     NEW_MODE_CURRENT_SEQUENCE) {
                     /* 模式2：完整调用当前main已有的顺序状态机与控制函数。 */

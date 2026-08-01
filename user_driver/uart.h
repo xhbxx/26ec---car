@@ -16,4 +16,13 @@ void UART_EnableRxInterrupt(void);
 uint8_t UART_read_received_byte(uint8_t *value);
 uint16_t UART_get_rx_overflow_count(void);
 
+/** 开启UART3/PA13车辆状态接收中断。 */
+void Vehicle_UART_EnableRxInterrupt(void);
+/** 从车辆状态UART3环形缓冲读取一个字节；无数据返回0。 */
+uint8_t Vehicle_UART_ReadByte(uint8_t *value);
+/** 返回车辆状态接收缓冲累计溢出次数。 */
+uint16_t Vehicle_UART_GetOverflowCount(void);
+/** 返回UART3累计硬件接收错误次数。 */
+uint16_t Vehicle_UART_GetErrorCount(void);
+
 #endif /* UART_H */

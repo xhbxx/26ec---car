@@ -15,6 +15,7 @@ const UART   = scripting.addModule("/ti/driverlib/UART", {}, false);
 const UART1  = UART.addInstance();
 const UART2  = UART.addInstance();
 const UART3  = UART.addInstance();
+const UART4  = UART.addInstance();
 
 GPIO1.$name                              = "Bianma";
 GPIO1.associatedPins.create(3);
@@ -109,9 +110,27 @@ UART3.rxPinConfig.onlyInternalResistor = scripting.forceWrite(false);
 UART3.rxPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
 UART3.rxPinConfig.$name                = "LLM_UART_RX_PIN";
 
+/* 车辆状态接收串口：发送板PA10/UART0_TX接本板PA13/UART3_RX。 */
+UART4.$name                            = "VEHICLE_UART";
+UART4.targetBaudRate                   = 115200;
+UART4.rxFifoThreshold                  = "DL_UART_RX_FIFO_LEVEL_ONE_ENTRY";
+UART4.peripheral.$assign               = "UART3";
+UART4.peripheral.txPin.$assign         = "PA14";
+UART4.peripheral.rxPin.$assign         = "PA13";
+UART4.txPinConfig.direction            = scripting.forceWrite("OUTPUT");
+UART4.txPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART4.txPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART4.txPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART4.txPinConfig.$name                = "VEHICLE_UART_TX_PIN";
+UART4.rxPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART4.rxPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART4.rxPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART4.rxPinConfig.$name                = "VEHICLE_UART_RX_PIN";
+
 UART1.peripheral.$suggestSolution = "UART2";
 UART2.peripheral.$suggestSolution = "UART0";
 UART3.peripheral.$suggestSolution = "UART1";
+UART4.peripheral.$suggestSolution = "UART3";
 Board.peripheral.$suggestSolution          = "DEBUGSS";
 Board.peripheral.swclkPin.$suggestSolution = "PA20";
 Board.peripheral.swdioPin.$suggestSolution = "PA19";

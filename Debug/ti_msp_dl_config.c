@@ -40,6 +40,8 @@
 
 #include "ti_msp_dl_config.h"
 
+DL_UART_Main_backupConfig gVEHICLE_UARTBackup;
+
 /*
  *  ======== SYSCFG_DL_init ========
  *  Perform any initialization needed before using any board APIs
@@ -54,9 +56,33 @@ SYSCONFIG_WEAK void SYSCFG_DL_init(void)
     SYSCFG_DL_PRINT_init();
     SYSCFG_DL_MOTOR_UART_init();
     SYSCFG_DL_LLM_UART_init();
+    SYSCFG_DL_VEHICLE_UART_init();
+    /* Ensure backup structures have no valid state */
+	gVEHICLE_UARTBackup.backupRdy 	= false;
+
+}
+/*
+ * User should take care to save and restore register configuration in application.
+ * See Retention Configuration section for more details.
+ */
+SYSCONFIG_WEAK bool SYSCFG_DL_saveConfiguration(void)
+{
+    bool retStatus = true;
+
+	retStatus &= DL_UART_Main_saveConfiguration(VEHICLE_UART_INST, &gVEHICLE_UARTBackup);
+
+    return retStatus;
 }
 
 
+SYSCONFIG_WEAK bool SYSCFG_DL_restoreConfiguration(void)
+{
+    bool retStatus = true;
+
+	retStatus &= DL_UART_Main_restoreConfiguration(VEHICLE_UART_INST, &gVEHICLE_UARTBackup);
+
+    return retStatus;
+}
 
 SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
 {
@@ -66,6 +92,7 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_UART_Main_reset(PRINT_INST);
     DL_UART_Main_reset(MOTOR_UART_INST);
     DL_UART_Main_reset(LLM_UART_INST);
+    DL_UART_Main_reset(VEHICLE_UART_INST);
 
     DL_GPIO_enablePower(GPIOA);
     DL_GPIO_enablePower(GPIOB);
@@ -73,6 +100,7 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_UART_Main_enablePower(PRINT_INST);
     DL_UART_Main_enablePower(MOTOR_UART_INST);
     DL_UART_Main_enablePower(LLM_UART_INST);
+    DL_UART_Main_enablePower(VEHICLE_UART_INST);
     delay_cycles(POWER_STARTUP_DELAY);
 }
 
@@ -103,6 +131,10 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
         GPIO_LLM_UART_IOMUX_TX, GPIO_LLM_UART_IOMUX_TX_FUNC);
     DL_GPIO_initPeripheralInputFunction(
         GPIO_LLM_UART_IOMUX_RX, GPIO_LLM_UART_IOMUX_RX_FUNC);
+    DL_GPIO_initPeripheralOutputFunction(
+        GPIO_VEHICLE_UART_IOMUX_TX, GPIO_VEHICLE_UART_IOMUX_TX_FUNC);
+    DL_GPIO_initPeripheralInputFunction(
+        GPIO_VEHICLE_UART_IOMUX_RX, GPIO_VEHICLE_UART_IOMUX_RX_FUNC);
 
     DL_GPIO_initDigitalInputFeatures(Bianma_ENC_A_IOMUX,
 		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
@@ -258,5 +290,36 @@ SYSCONFIG_WEAK void SYSCFG_DL_LLM_UART_init(void)
 
 
     DL_UART_Main_enable(LLM_UART_INST);
+}
+static const DL_UART_Main_ClockConfig gVEHICLE_UARTClockConfig = {
+    .clockSel    = DL_UART_MAIN_CLOCK_BUSCLK,
+    .divideRatio = DL_UART_MAIN_CLOCK_DIVIDE_RATIO_1
+};
+
+static const DL_UART_Main_Config gVEHICLE_UARTConfig = {
+    .mode        = DL_UART_MAIN_MODE_NORMAL,
+    .direction   = DL_UART_MAIN_DIRECTION_TX_RX,
+    .flowControl = DL_UART_MAIN_FLOW_CONTROL_NONE,
+    .parity      = DL_UART_MAIN_PARITY_NONE,
+    .wordLength  = DL_UART_MAIN_WORD_LENGTH_8_BITS,
+    .stopBits    = DL_UART_MAIN_STOP_BITS_ONE
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_VEHICLE_UART_init(void)
+{
+    DL_UART_Main_setClockConfig(VEHICLE_UART_INST, (DL_UART_Main_ClockConfig *) &gVEHICLE_UARTClockConfig);
+
+    DL_UART_Main_init(VEHICLE_UART_INST, (DL_UART_Main_Config *) &gVEHICLE_UARTConfig);
+    /*
+     * Configure baud rate by setting oversampling and baud rate divisors.
+     *  Target baud rate: 115200
+     *  Actual baud rate: 115211.52
+     */
+    DL_UART_Main_setOversampling(VEHICLE_UART_INST, DL_UART_OVERSAMPLING_RATE_16X);
+    DL_UART_Main_setBaudRateDivisor(VEHICLE_UART_INST, VEHICLE_UART_IBRD_32_MHZ_115200_BAUD, VEHICLE_UART_FBRD_32_MHZ_115200_BAUD);
+
+
+
+    DL_UART_Main_enable(VEHICLE_UART_INST);
 }
 

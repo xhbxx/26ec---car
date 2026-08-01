@@ -2,6 +2,7 @@
 
 #define UART_RX_BUFFER_SIZE            (512U)
 #define MOTOR_UART_RX_BUFFER_SIZE      (32U)
+#define VEHICLE_UART_RX_BUFFER_SIZE    (256U)
 
 static volatile uint8_t g_uart_rx_buffer[UART_RX_BUFFER_SIZE];
 static volatile uint16_t g_uart_rx_head = 0U;
@@ -10,6 +11,19 @@ static volatile uint16_t g_uart_rx_overflow_count = 0U;
 static volatile uint8_t g_motor_uart_rx_buffer[MOTOR_UART_RX_BUFFER_SIZE];
 static volatile uint8_t g_motor_uart_rx_head = 0U;
 static volatile uint8_t g_motor_uart_rx_tail = 0U;
+static volatile uint8_t g_vehicle_uart_rx_buffer[VEHICLE_UART_RX_BUFFER_SIZE];
+static volatile uint16_t g_vehicle_uart_rx_head = 0U;
+static volatile uint16_t g_vehicle_uart_rx_tail = 0U;
+static volatile uint16_t g_vehicle_uart_rx_overflow_count = 0U;
+static volatile uint16_t g_vehicle_uart_error_count = 0U;
+
+#define VEHICLE_UART_ERROR_INTERRUPTS                                \
+    (DL_UART_MAIN_INTERRUPT_OVERRUN_ERROR |                          \
+     DL_UART_MAIN_INTERRUPT_BREAK_ERROR |                            \
+     DL_UART_MAIN_INTERRUPT_PARITY_ERROR |                           \
+     DL_UART_MAIN_INTERRUPT_FRAMING_ERROR |                          \
+     DL_UART_MAIN_INTERRUPT_RX_TIMEOUT_ERROR |                       \
+     DL_UART_MAIN_INTERRUPT_NOISE_ERROR)
 
 void UART_send_char(UART_Regs *uart, const uint8_t chr)
 {
@@ -144,6 +158,85 @@ uint8_t Serial1_SendArrayTry(const uint8_t *data, uint16_t length)
 uint16_t UART_get_rx_overflow_count(void)
 {
     return g_uart_rx_overflow_count;
+}
+
+/** 开启UART3车辆数据接收；中断只保存字节，协议解析留在主循环执行。 */
+void Vehicle_UART_EnableRxInterrupt(void)
+{
+    g_vehicle_uart_rx_head = 0U;
+    g_vehicle_uart_rx_tail = 0U;
+    g_vehicle_uart_rx_overflow_count = 0U;
+    g_vehicle_uart_error_count = 0U;
+
+    while (!DL_UART_Main_isRXFIFOEmpty(VEHICLE_UART_INST)) {
+        (void)DL_UART_Main_receiveData(VEHICLE_UART_INST);
+    }
+    DL_UART_Main_setRXFIFOThreshold(
+        VEHICLE_UART_INST, DL_UART_RX_FIFO_LEVEL_ONE_ENTRY);
+    DL_UART_Main_clearInterruptStatus(VEHICLE_UART_INST,
+        DL_UART_MAIN_INTERRUPT_RX | VEHICLE_UART_ERROR_INTERRUPTS);
+    DL_UART_Main_enableInterrupt(VEHICLE_UART_INST,
+        DL_UART_MAIN_INTERRUPT_RX | VEHICLE_UART_ERROR_INTERRUPTS);
+    NVIC_ClearPendingIRQ(VEHICLE_UART_INST_INT_IRQN);
+    NVIC_EnableIRQ(VEHICLE_UART_INST_INT_IRQN);
+}
+
+/** 从UART3环形缓冲取出一个车辆协议字节。 */
+uint8_t Vehicle_UART_ReadByte(uint8_t *value)
+{
+    if ((value == 0) ||
+        (g_vehicle_uart_rx_head == g_vehicle_uart_rx_tail)) {
+        return 0U;
+    }
+
+    *value = g_vehicle_uart_rx_buffer[g_vehicle_uart_rx_tail];
+    g_vehicle_uart_rx_tail = (uint16_t)((g_vehicle_uart_rx_tail + 1U) %
+        VEHICLE_UART_RX_BUFFER_SIZE);
+    return 1U;
+}
+
+/** 返回因主循环处理不及时造成的车辆UART缓冲溢出次数。 */
+uint16_t Vehicle_UART_GetOverflowCount(void)
+{
+    return g_vehicle_uart_rx_overflow_count;
+}
+
+/** 返回UART3累计硬件接收错误次数，用于判断电平、共地和波特率问题。 */
+uint16_t Vehicle_UART_GetErrorCount(void)
+{
+    return g_vehicle_uart_error_count;
+}
+
+/** UART3车辆接收中断：一次读空FIFO，避免100Hz连续帧丢字节。 */
+void VEHICLE_UART_INST_IRQHandler(void)
+{
+    uint32_t errors = DL_UART_Main_getRawInterruptStatus(
+        VEHICLE_UART_INST, VEHICLE_UART_ERROR_INTERRUPTS);
+
+    if (errors != 0U) {
+        /* 错误状态必须主动清除，否则后续RX中断可能一直被错误原因占据。 */
+        DL_UART_Main_clearInterruptStatus(VEHICLE_UART_INST, errors);
+        g_vehicle_uart_error_count++;
+    }
+
+    /* 不依赖最高优先级中断原因，任何一次进入中断都先把RX FIFO读空。 */
+    while (!DL_UART_Main_isRXFIFOEmpty(VEHICLE_UART_INST)) {
+        const uint8_t received =
+            DL_UART_Main_receiveData(VEHICLE_UART_INST);
+        const uint16_t next = (uint16_t)(
+            (g_vehicle_uart_rx_head + 1U) % VEHICLE_UART_RX_BUFFER_SIZE);
+
+        if (next == g_vehicle_uart_rx_tail) {
+            g_vehicle_uart_rx_tail = (uint16_t)(
+                (g_vehicle_uart_rx_tail + 1U) %
+                VEHICLE_UART_RX_BUFFER_SIZE);
+            g_vehicle_uart_rx_overflow_count++;
+        }
+        g_vehicle_uart_rx_buffer[g_vehicle_uart_rx_head] = received;
+        g_vehicle_uart_rx_head = next;
+    }
+    DL_UART_Main_clearInterruptStatus(
+        VEHICLE_UART_INST, DL_UART_MAIN_INTERRUPT_RX);
 }
 
 /** UART RX中断只负责收数，不执行发送或OLED刷新。 */
