@@ -52,6 +52,15 @@
 /* 旋钮每转动一格，目标位置增加或减少的数值。 */
 #define POSITION_TARGET_STEP           (1)
 
+/* Mod4/Mod5：小车全程保持同方向恒定加速度，不设置减速补偿段。 */
+#define MODE4_MOTION_COMPENSATION_DEG  (2.40f)
+/* Mod5 与Mod4使用相同的补偿角和触发逻辑。 */
+#define MODE5_MOTION_COMPENSATION_DEG  (2.40f)
+/* 检测到第一次运动后延迟2秒，再开始输出车辆补偿角。 */
+#define MODE_COMP_DELAY_MS              (2000UL)
+/* Mod4/Mod5只有球偏离默认位置超过该值时才启动位置回正。 */
+#define MODE_COMP_RETURN_ERROR_LIMIT   (100.0f)
+
 /*
  * 编码器按键测试顺序：球手动放在C≈250后，按下编码器，先向360运动；到达360±5后不停车，立即反向前往125。
  * 允许惯性越过360，但370开始强制回拉，375为硬保护线。
@@ -122,11 +131,11 @@
  * 调参时先令 POSITION_KI=0，调整 KP、KD，最后再少量增加 KI。
  */
 /* 位置比例系数：误差越大，要求的目标速度越大；过大会过冲和来回摆动，过小则响应慢。 */
-#define POSITION_KP                    (2.0f)
+#define POSITION_KP                    (2.1f)
 /* 位置积分系数：消除长期位置偏差；过大会积分累积并导致明显过冲，通常只使用很小数值。 */
 #define POSITION_KI                    (0.03f)
 /* 位置微分系数：根据误差变化提前减速、增加阻尼；过大会放大位置噪声并造成电机抖动。 */
-#define POSITION_KD                    (0.004f)
+#define POSITION_KD                    (0.003f)
 /* 位置外环最大输出，即 target_speed 的绝对值上限；越大允许7小球移动得越快，也越容易冲过目标。 */
 #define POSITION_MAX_SPEED             (70.0f)
 /* 位置环积分累计上限，用于防止长时间大误差造成积分饱和；不是速度或角度上限。 */
@@ -202,7 +211,9 @@ typedef enum
 {
     NEW_MODE_HOLD_250 = 1,
     NEW_MODE_CURRENT_SEQUENCE = 2,
-    NEW_MODE_ENCODER_TARGET = 3
+    NEW_MODE_ENCODER_TARGET = 3,
+    NEW_MODE_CAR_COMP_1 = 4,
+    NEW_MODE_CAR_COMP_2 = 5
 } NewOperatingMode;
 
 volatile uint16_t current_position = 0U;
@@ -251,6 +262,9 @@ static uint8_t g_sequence_start_requested = 0U;
 
 /* 新主程序菜单状态；旧主程序Current_Main不读取这些变量。 */
 static NewOperatingMode g_new_selected_mode = NEW_MODE_HOLD_250;
+static uint32_t g_car_comp_start_ms = 0U;
+static uint8_t g_car_comp_motion_started = 0U;
+static int8_t g_car_comp_direction = 0;
 static uint8_t g_new_mode_confirmed = 0U;
 static uint8_t g_new_mode_input_ready = 0U;
 static uint8_t g_new_target_confirmed = 0U;
@@ -659,12 +673,31 @@ static void OLED_ShowControlInfo(void);
  */
 static void OLED_ShowModeMenu(void)
 {
+    uint8_t second_page = (g_new_selected_mode >= NEW_MODE_CAR_COMP_1)
+        ? 1U : 0U;
+
     /*
      * 只清显存，不把空白帧立即发送到屏幕。
      * 原OLED_Clear()会先整屏刷黑，连续调用时会闪烁，并长时间阻塞编码器采样。
      */
     OLED_ClearBuffer();
-    OLED_ShowString(18U, 0U, (u8 *)"SELECT MODE", 12U);
+    OLED_ShowString(18U, 0U,
+        (u8 *)(second_page != 0U ? "SELECT 2/2" : "SELECT 1/2"), 12U);
+
+    if (second_page != 0U) {
+        OLED_ShowString(0U, 16U,
+            (u8 *)((g_new_selected_mode == NEW_MODE_CAR_COMP_1) ? ">" : " "),
+            12U);
+        OLED_ShowString(12U, 16U, (u8 *)"4 CAR COMP A", 12U);
+
+        OLED_ShowString(0U, 32U,
+            (u8 *)((g_new_selected_mode == NEW_MODE_CAR_COMP_2) ? ">" : " "),
+            12U);
+        OLED_ShowString(12U, 32U, (u8 *)"5 CAR COMP B", 12U);
+        OLED_ShowString(12U, 48U, (u8 *)"ROTATE TO PAGE", 12U);
+        g_oled_refresh_page = 0U;
+        return;
+    }
 
     OLED_ShowString(0U, 16U,
         (u8 *)((g_new_selected_mode == NEW_MODE_HOLD_250) ? ">" : " "),
@@ -697,6 +730,9 @@ static void NewMode_ResetControlState(void)
     g_sequence_state = BALL_SEQUENCE_WAIT_START;
     g_sequence_stable_cycles = 0U;
     g_sequence_start_requested = 0U;
+    g_car_comp_start_ms = g_milliseconds;
+    g_car_comp_motion_started = 0U;
+    g_car_comp_direction = 0;
     Motor_SetAngle(0.0f);
 }
 
@@ -715,12 +751,12 @@ static void NewMode_ProcessEncoder(int8_t rotation, uint8_t poll_button)
     if (g_new_mode_confirmed == 0U) {
         if (rotation > 0) {
             g_new_selected_mode = (g_new_selected_mode >=
-                NEW_MODE_ENCODER_TARGET) ? NEW_MODE_HOLD_250 :
+                NEW_MODE_CAR_COMP_2) ? NEW_MODE_HOLD_250 :
                 (NewOperatingMode)((uint8_t)g_new_selected_mode + 1U);
             OLED_ShowModeMenu();
         } else if (rotation < 0) {
             g_new_selected_mode = (g_new_selected_mode <=
-                NEW_MODE_HOLD_250) ? NEW_MODE_ENCODER_TARGET :
+                NEW_MODE_HOLD_250) ? NEW_MODE_CAR_COMP_2 :
                 (NewOperatingMode)((uint8_t)g_new_selected_mode - 1U);
             OLED_ShowModeMenu();
         }
@@ -948,6 +984,47 @@ static void Ball_SequenceUpdate(void)
     }
 }
 
+/* Mod4/Mod5的补偿保持：不让位置环把球主动拉回默认位置，
+ * 只输出运行补偿角，并在补偿结束后把水管缓慢回到水平零角。 */
+static void Ball_CarCompensationOnlyUpdate(void)
+{
+    float desired_angle = 0.0f;
+    float change;
+    float compensation_angle;
+
+    target_speed = 0.0f;
+    PID_Reset(&g_position_pid);
+    PID_Reset(&g_speed_pid);
+
+    if ((g_car_comp_motion_started == 0U) &&
+        (g_speed_valid != 0U) &&
+        (current_speed > SPEED_ZERO_DEADBAND ||
+         current_speed < -SPEED_ZERO_DEADBAND)) {
+        g_car_comp_motion_started = 1U;
+        g_car_comp_start_ms = g_milliseconds;
+        g_car_comp_direction = (current_speed > 0.0f) ? 1 : -1;
+    }
+    if ((g_car_comp_motion_started != 0U) &&
+        ((uint32_t)(g_milliseconds - g_car_comp_start_ms) >=
+         MODE_COMP_DELAY_MS)) {
+        /* 延迟结束后直接输出完整角度，并一直保持。 */
+        compensation_angle =
+            (g_new_selected_mode == NEW_MODE_CAR_COMP_1)
+            ? MODE4_MOTION_COMPENSATION_DEG
+            : MODE5_MOTION_COMPENSATION_DEG;
+        desired_angle = compensation_angle * (float)g_car_comp_direction;
+    }
+
+    change = desired_angle - pipe_angle;
+    if (change > PIPE_ANGLE_SLEW_PER_CYCLE) {
+        change = PIPE_ANGLE_SLEW_PER_CYCLE;
+    } else if (change < -PIPE_ANGLE_SLEW_PER_CYCLE) {
+        change = -PIPE_ANGLE_SLEW_PER_CYCLE;
+    }
+    pipe_angle += change;
+    Motor_SetAngle(pipe_angle);
+}
+
 /** 固定20 ms执行位置外环和速度内环，并将目标管角交给已有电机驱动。 */
 static void Ball_ControlUpdate(void)
 {
@@ -1150,6 +1227,32 @@ static void Ball_ControlUpdate(void)
         desired_pipe_angle = PID_UpdateConditional(&g_speed_pid,
             target_speed, control_speed,
             (uint8_t)(in_deadband == 0U));
+    }
+
+    /* Mod4/Mod5：小车全程恒定加速度时，球一旦开始移动就持续加入
+     * 同方向固定补偿；第一次触发采用较小幅度并在250ms内平滑升高，
+     * 避免第一帧速度跳变叠加补偿造成角度偏大。 */
+    if ((g_new_selected_mode == NEW_MODE_CAR_COMP_1) ||
+        (g_new_selected_mode == NEW_MODE_CAR_COMP_2)) {
+        float compensation_angle =
+            (g_new_selected_mode == NEW_MODE_CAR_COMP_1)
+            ? MODE4_MOTION_COMPENSATION_DEG
+            : MODE5_MOTION_COMPENSATION_DEG;
+
+        if ((g_car_comp_motion_started == 0U) &&
+            (g_speed_valid != 0U) &&
+            (absolute_current_speed > SPEED_ZERO_DEADBAND)) {
+            g_car_comp_motion_started = 1U;
+            g_car_comp_start_ms = g_milliseconds;
+            g_car_comp_direction = (control_speed > 0.0f) ? 1 : -1;
+        }
+        if (g_car_comp_motion_started != 0U &&
+            (uint32_t)(g_milliseconds - g_car_comp_start_ms) >=
+            MODE_COMP_DELAY_MS) {
+            /* 延迟结束后直接叠加完整补偿角，不再渐增。 */
+            desired_pipe_angle += compensation_angle *
+                (float)g_car_comp_direction;
+        }
     }
 
     /* 往0方向使用负管角：降低该方向增益并单独限幅，避免动作幅度过大。 */
@@ -1429,6 +1532,20 @@ int New_Main(void)
                     /* 模式1：固定目标250，球被扰动后仍会由原双环PID拉回。 */
                     target_position = POSITION_DEFAULT_TARGET;
                     Ball_ControlUpdate();
+                } else if ((g_new_selected_mode == NEW_MODE_CAR_COMP_1) ||
+                    (g_new_selected_mode == NEW_MODE_CAR_COMP_2)) {
+                    float mode_error;
+                    target_position = POSITION_DEFAULT_TARGET;
+                    mode_error = (float)target_position -
+                        (float)current_position;
+                    if (mode_error > MODE_COMP_RETURN_ERROR_LIMIT ||
+                        mode_error < -MODE_COMP_RETURN_ERROR_LIMIT) {
+                        /* 偏离超过100才允许原位置环主动回正。 */
+                        Ball_ControlUpdate();
+                    } else {
+                        /* 偏离不超过100时只做加速度补偿，并回水平零角。 */
+                        Ball_CarCompensationOnlyUpdate();
+                    }
                 } else if (g_new_selected_mode ==
                     NEW_MODE_CURRENT_SEQUENCE) {
                     /* 模式2：完整调用当前main已有的顺序状态机与控制函数。 */
