@@ -11,5 +11,8 @@ uint8_t ImuHeading_IsOnline(void);
 int32_t ImuHeading_GetAngleMdeg(void);
 int32_t ImuHeading_GetRateMdps(void);
 int16_t ImuHeading_GetBiasRaw(void);
+int16_t ImuHeading_GetAccelXMg(void);
+int16_t ImuHeading_GetAccelYMg(void);
+int16_t ImuHeading_GetAccelZMg(void);
 
 #endif /* IMU_HEADING_H */

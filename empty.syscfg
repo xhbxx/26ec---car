@@ -23,6 +23,8 @@ const PWM1   = PWM.addInstance();
 const SYSCTL = scripting.addModule("/ti/driverlib/SYSCTL");
 const TIMER  = scripting.addModule("/ti/driverlib/TIMER", {}, false);
 const TIMER1 = TIMER.addInstance();
+const UART   = scripting.addModule("/ti/driverlib/UART", {}, false);
+const UART1  = UART.addInstance();
 
 /**
  * Write custom configuration values to the imported modules.
@@ -177,6 +179,12 @@ TIMER1.timerPeriod        = "50ms";
 TIMER1.timerClkPrescale   = 100;
 TIMER1.interrupts         = ["LOAD"];
 TIMER1.peripheral.$assign = "TIMA0";
+
+UART1.$name                    = "TELEMETRY_UART";
+UART1.targetBaudRate           = 115200;
+UART1.peripheral.$assign       = "UART0";
+UART1.peripheral.txPin.$assign = "PA10";
+UART1.peripheral.rxPin.$assign = "PA11";
 
 /**
  * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future

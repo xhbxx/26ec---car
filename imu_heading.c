@@ -10,6 +10,9 @@ static uint8_t g_ready;
 static uint32_t g_last_update_ms;
 static int32_t g_angle_mdeg;
 static int32_t g_rate_mdps;
+static int16_t g_accel_x_mg;
+static int16_t g_accel_y_mg;
+static int16_t g_accel_z_mg;
 
 void ImuHeading_Init(uint32_t now_ms)
 {
@@ -19,6 +22,9 @@ void ImuHeading_Init(uint32_t now_ms)
     g_ready = 0U;
     g_angle_mdeg = 0;
     g_rate_mdps = 0;
+    g_accel_x_mg = 0;
+    g_accel_y_mg = 0;
+    g_accel_z_mg = 0;
     g_last_update_ms = now_ms;
     (void)ATK_MS6DSV_Init();
 }
@@ -39,6 +45,9 @@ void ImuHeading_Update(uint32_t now_ms)
         return;
     }
     ATK_MS6DSV_GetRawData(&raw);
+    g_accel_x_mg = (int16_t)(ATK_MS6DSV_AccelRawToUg(raw.accel_x) / 1000L);
+    g_accel_y_mg = (int16_t)(ATK_MS6DSV_AccelRawToUg(raw.accel_y) / 1000L);
+    g_accel_z_mg = (int16_t)(ATK_MS6DSV_AccelRawToUg(raw.accel_z) / 1000L);
 
     if (g_ready == 0U) {
         g_bias_sum += raw.gyro_z;
@@ -90,4 +99,19 @@ int32_t ImuHeading_GetRateMdps(void)
 int16_t ImuHeading_GetBiasRaw(void)
 {
     return g_bias_raw;
+}
+
+int16_t ImuHeading_GetAccelXMg(void)
+{
+    return g_accel_x_mg;
+}
+
+int16_t ImuHeading_GetAccelYMg(void)
+{
+    return g_accel_y_mg;
+}
+
+int16_t ImuHeading_GetAccelZMg(void)
+{
+    return g_accel_z_mg;
 }

@@ -36,6 +36,14 @@ static int32_t chassis_limit32(int32_t value, int32_t limit)
     return value;
 }
 
+static int32_t chassis_deadband32(int32_t value, int32_t deadband)
+{
+    if (value > -deadband && value < deadband) {
+        return 0;
+    }
+    return value;
+}
+
 static int32_t chassis_accel_mmps2(void)
 {
     if (g_task_mode == 4U) {
@@ -198,7 +206,8 @@ static int32_t chassis_straight_speed(void)
 static int32_t chassis_curve_speed(void)
 {
     if (g_task_mode == 2U) {
-        return TASK2_CURVE_MMPS;
+        return (g_state == CHASSIS_CURVE_DA)
+            ? TASK2_SECOND_CURVE_MMPS : TASK2_CURVE_MMPS;
     }
     return TASK5_CURVE_MMPS;
 }
@@ -238,19 +247,15 @@ static void chassis_drive_straight(int32_t base_mmps,
             limit = TASK45_GYRO_STRAIGHT_LIMIT_MMPS;
         }
 
-        /* 按当前直线路段的目标航向计算陀螺仪修正。 */
+        /* Mode 4/5 ignore small gyro drift; only obvious acceleration-induced
+         * heading error is corrected back toward the current straight heading. */
         int32_t heading_error = target_angle_mdeg -
             ImuHeading_GetAngleMdeg();
-
+        
         line_correction = chassis_limit32(
             (int32_t)(((int64_t)heading_error * gain) / 1000L), limit);
     } else {
         line_correction = chassis_line_correction(line);
-    }
-
-    /* Mode 2 出弯后立即建立回正差速，不经过转向缓变。 */
-    if ((g_task_mode == 2U) && (g_state == CHASSIS_STRAIGHT_CD)) {
-        g_steering_command_x1000 = line_correction * 1000L;
     }
 
     chassis_apply_wheels(base_mmps + line_correction,

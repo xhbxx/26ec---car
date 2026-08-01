@@ -56,9 +56,11 @@ SYSCONFIG_WEAK void SYSCFG_DL_init(void)
     SYSCFG_DL_MOTOR_PID_init();
     SYSCFG_DL_OLED_init();
     SYSCFG_DL_MS6DSV_init();
+    SYSCFG_DL_TELEMETRY_UART_init();
     /* Ensure backup structures have no valid state */
 
 	gMOTOR_PIDBackup.backupRdy 	= false;
+
 
 }
 /*
@@ -92,6 +94,7 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_TimerA_reset(MOTOR_PID_INST);
     DL_I2C_reset(OLED_INST);
     DL_I2C_reset(MS6DSV_INST);
+    DL_UART_Main_reset(TELEMETRY_UART_INST);
 
     DL_GPIO_enablePower(GPIOA);
     DL_GPIO_enablePower(GPIOB);
@@ -99,6 +102,7 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_TimerA_enablePower(MOTOR_PID_INST);
     DL_I2C_enablePower(OLED_INST);
     DL_I2C_enablePower(MS6DSV_INST);
+    DL_UART_Main_enablePower(TELEMETRY_UART_INST);
     delay_cycles(POWER_STARTUP_DELAY);
 }
 
@@ -135,6 +139,11 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
 		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
     DL_GPIO_enableHiZ(GPIO_MS6DSV_IOMUX_SDA);
     DL_GPIO_enableHiZ(GPIO_MS6DSV_IOMUX_SCL);
+
+    DL_GPIO_initPeripheralOutputFunction(
+        GPIO_TELEMETRY_UART_IOMUX_TX, GPIO_TELEMETRY_UART_IOMUX_TX_FUNC);
+    DL_GPIO_initPeripheralInputFunction(
+        GPIO_TELEMETRY_UART_IOMUX_RX, GPIO_TELEMETRY_UART_IOMUX_RX_FUNC);
 
     DL_GPIO_initDigitalOutput(LED_STATUS_IOMUX);
 
@@ -462,5 +471,37 @@ SYSCONFIG_WEAK void SYSCFG_DL_MS6DSV_init(void) {
     DL_I2C_enableController(MS6DSV_INST);
 
 
+}
+
+static const DL_UART_Main_ClockConfig gTELEMETRY_UARTClockConfig = {
+    .clockSel    = DL_UART_MAIN_CLOCK_BUSCLK,
+    .divideRatio = DL_UART_MAIN_CLOCK_DIVIDE_RATIO_1
+};
+
+static const DL_UART_Main_Config gTELEMETRY_UARTConfig = {
+    .mode        = DL_UART_MAIN_MODE_NORMAL,
+    .direction   = DL_UART_MAIN_DIRECTION_TX_RX,
+    .flowControl = DL_UART_MAIN_FLOW_CONTROL_NONE,
+    .parity      = DL_UART_MAIN_PARITY_NONE,
+    .wordLength  = DL_UART_MAIN_WORD_LENGTH_8_BITS,
+    .stopBits    = DL_UART_MAIN_STOP_BITS_ONE
+};
+
+SYSCONFIG_WEAK void SYSCFG_DL_TELEMETRY_UART_init(void)
+{
+    DL_UART_Main_setClockConfig(TELEMETRY_UART_INST, (DL_UART_Main_ClockConfig *) &gTELEMETRY_UARTClockConfig);
+
+    DL_UART_Main_init(TELEMETRY_UART_INST, (DL_UART_Main_Config *) &gTELEMETRY_UARTConfig);
+    /*
+     * Configure baud rate by setting oversampling and baud rate divisors.
+     *  Target baud rate: 115200
+     *  Actual baud rate: 115190.78
+     */
+    DL_UART_Main_setOversampling(TELEMETRY_UART_INST, DL_UART_OVERSAMPLING_RATE_16X);
+    DL_UART_Main_setBaudRateDivisor(TELEMETRY_UART_INST, TELEMETRY_UART_IBRD_40_MHZ_115200_BAUD, TELEMETRY_UART_FBRD_40_MHZ_115200_BAUD);
+
+
+
+    DL_UART_Main_enable(TELEMETRY_UART_INST);
 }
 

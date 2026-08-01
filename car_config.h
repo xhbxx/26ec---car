@@ -7,7 +7,7 @@
 /* AB 第一段直线目标距离。 */
 #define TRACK_STRAIGHT_MM                 (1510L)
 /* Mode 2 的 CD 第二段直线目标距离，单独修改不会影响 Mode 5。 */
-#define TASK2_CD_STRAIGHT_MM              (1440L)
+#define TASK2_CD_STRAIGHT_MM              (1455L)
 /* Mode 5 的 CD 第二段直线目标距离，单独修改不会影响 Mode 2。 */
 #define TASK5_CD_STRAIGHT_MM              (1440L)
 /* 赛题圆弧中心线半径，通常按题目固定，不建议用它补偿转向误差。 */
@@ -40,11 +40,15 @@
 
 /* ==================== 各模式速度（单位：mm/s） ==================== */
 /* Mode 2 直线速度；增大可缩短时间，但钢球更容易移动。 */
-#define TASK2_STRAIGHT_MMPS               (480)
-/* Mode 2 弯道速度；过大会冲出轨迹。 */
+#define TASK2_STRAIGHT_MMPS               (450)
+/* Mode 2 第一个弯道中心速度；过大会冲出轨迹。 */
 #define TASK2_CURVE_MMPS                  (450)
-/* Mode 2 编码器圆弧基础半差速；增大转弯更急，减小转弯更缓。 */
-#define TASK2_CURVE_STEERING_MMPS         (135L)
+/* Mode 2 第二个弯道中心速度；与第一弯分开调，当前提高 20 mm/s。 */
+#define TASK2_SECOND_CURVE_MMPS           (475)
+/* Mode 2 第一个弯道基础半差速；增大转弯更急，减小转弯更缓。 */
+#define TASK2_CURVE_STEERING_MMPS         (140L)
+/* Mode 2 第二个弯道基础半差速；与第一弯分开调，当前增加 15 mm/s。 */
+#define TASK2_SECOND_CURVE_STEERING_MMPS  (155L)
 /* Mode 2 弯道陀螺仪角度比例和最大追加半差速。 */
 #define TASK2_GYRO_CURVE_KP_MMPS_PER_DEG  (8L)
 #define TASK2_GYRO_CURVE_LIMIT_MMPS       (40L)
@@ -52,7 +56,7 @@
 #define TASK2_GYRO_STRAIGHT_KP_MMPS_PER_DEG (5L)
 #define TASK2_GYRO_STRAIGHT_LIMIT_MMPS    (30L)
 /* Mode 2 主动短刹车的估算减速度和位置余量，用于提前预测停车点。 */
-#define TASK2_ACTIVE_BRAKE_DECEL_MMPS2    (1000L)
+#define TASK2_ACTIVE_BRAKE_DECEL_MMPS2    (500L)
 #define TASK2_BRAKE_MARGIN_MM             (10L)
 /* Mode 4 直线速度。 */
 #define TASK4_STRAIGHT_MMPS               (220)
@@ -61,7 +65,7 @@
 /* Mode 5 弯道速度。 */
 #define TASK5_CURVE_MMPS                  (230)
 /* Mode 4/5 直线陀螺仪修正；增大比例可更快纠正偏航。 */
-#define TASK45_GYRO_STRAIGHT_KP_MMPS_PER_DEG (2L)
+#define TASK45_GYRO_STRAIGHT_KP_MMPS_PER_DEG (3L)
 #define TASK45_GYRO_STRAIGHT_LIMIT_MMPS   (25L)
 /* Mode 5 编码器圆弧基础半差速与陀螺仪修正。 */
 #define TASK5_CURVE_STEERING_MMPS         (40L)

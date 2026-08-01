@@ -147,6 +147,26 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define GPIO_MS6DSV_IOMUX_SCL_FUNC                     IOMUX_PINCM37_PF_I2C1_SCL
 
 
+/* Defines for TELEMETRY_UART */
+#define TELEMETRY_UART_INST                                                UART0
+#define TELEMETRY_UART_INST_FREQUENCY                                   40000000
+#define TELEMETRY_UART_INST_IRQHandler                          UART0_IRQHandler
+#define TELEMETRY_UART_INST_INT_IRQN                              UART0_INT_IRQn
+#define GPIO_TELEMETRY_UART_RX_PORT                                        GPIOA
+#define GPIO_TELEMETRY_UART_TX_PORT                                        GPIOA
+#define GPIO_TELEMETRY_UART_RX_PIN                                DL_GPIO_PIN_11
+#define GPIO_TELEMETRY_UART_TX_PIN                                DL_GPIO_PIN_10
+#define GPIO_TELEMETRY_UART_IOMUX_RX                             (IOMUX_PINCM22)
+#define GPIO_TELEMETRY_UART_IOMUX_TX                             (IOMUX_PINCM21)
+#define GPIO_TELEMETRY_UART_IOMUX_RX_FUNC               IOMUX_PINCM22_PF_UART0_RX
+#define GPIO_TELEMETRY_UART_IOMUX_TX_FUNC               IOMUX_PINCM21_PF_UART0_TX
+#define TELEMETRY_UART_BAUD_RATE                                        (115200)
+#define TELEMETRY_UART_IBRD_40_MHZ_115200_BAUD                              (21)
+#define TELEMETRY_UART_FBRD_40_MHZ_115200_BAUD                              (45)
+
+
+
+
 
 /* Port definition for Pin Group LED */
 #define LED_PORT                                                         (GPIOA)
@@ -226,6 +246,7 @@ void SYSCFG_DL_PWMAB_init(void);
 void SYSCFG_DL_MOTOR_PID_init(void);
 void SYSCFG_DL_OLED_init(void);
 void SYSCFG_DL_MS6DSV_init(void);
+void SYSCFG_DL_TELEMETRY_UART_init(void);
 
 
 bool SYSCFG_DL_saveConfiguration(void);

@@ -89,7 +89,8 @@ main.o: ../main.c \
  ../imu_heading.h \
  E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/motor.h \
  E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/oled.h \
- E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/atk_ms6dsv.h
+ E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/atk_ms6dsv.h \
+ ../telemetry_protocol.h
 ti_msp_dl_config.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/devices/msp/msp.h:
 C:/TI/mspm0_sdk_2_10_00_04/source/ti/devices/DeviceFamily.h:
@@ -181,3 +182,4 @@ E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/encoder.h:
 E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/motor.h:
 E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/oled.h:
 E:/install/keli/NEDC/11_TIANMENGXING_H_TASK_2456/user_driver/atk_ms6dsv.h:
+../telemetry_protocol.h:
