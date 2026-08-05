@@ -67,7 +67,7 @@
  * 车辆加速度到管角的直线幅度增益：82mm/s^2时约输出4.8度。
  * 增益8偏小、15偏大，因此折中为10；后续只需调此值改变直线整体幅度。
  */
-#define VEHICLE_ACCEL_ANGLE_GAIN        (10.0f)
+#define VEHICLE_ACCEL_ANGLE_GAIN        (8.2f)
 /* 实际加速度相对目标加速度的修正比例；0只用前馈，1只用实际加速度。 */
 #define VEHICLE_ACTUAL_ACCEL_BLEND      (0.25f)
 /* 车辆补偿角单独限幅；仍低于电机控制的PIPE_MAX_ANGLE_DEG机械总限幅。 */
@@ -77,10 +77,12 @@
  * 小球位置PID的慢斜率；当前取1.2度，避免上次2度造成回调动作过猛。
  */
 #define VEHICLE_COMP_SLEW_DEG           (1.2f)
+/* 弯道抑制需要更快响应，bit4有效时允许每20ms变化2度。 */
+#define VEHICLE_CURVE_SLEW_DEG          (3.0f)
 /* 目标角跨过机械零点时使用更慢的回调斜率，减少正负方向来回过调。 */
 #define VEHICLE_COMP_REVERSE_SLEW_DEG   (0.7f)
-/* 弯道中纵向IMU轴会混入侧向加速度，BC/DA弯道使用直线补偿角的65%。 */
-#define VEHICLE_CURVE_ANGLE_SCALE       (0.65f)
+/* BC/DA弯道使用直线补偿角的150%，加强弯道抑制；仍受14度上限保护。 */
+#define VEHICLE_CURVE_ANGLE_SCALE       (1.50f)
 /* IMU纵向轴：0=X、1=Y、2=Z；安装方向相反时把SIGN改成-1。 */
 #define VEHICLE_IMU_LONGITUDINAL_AXIS   (0U)
 #define VEHICLE_IMU_LONGITUDINAL_SIGN   (1.0f)
@@ -100,7 +102,9 @@
  * 第1段到达容差，单位为视觉坐标值。小球向360单向运动时，C>=355便切换回程；
  * 这样即使某一帧从354直接跳到366，也不会漏掉换向，实际允许范围为360±5。
  */
-#define SEQUENCE_FIRST_TOLERANCE       (22U)
+#define SEQUENCE_FIRST_TOLERANCE       (25U)
+/* 从起点驶向130阶段的负管角增益，只增强该段力度，不影响随后返回350。 */
+#define SEQUENCE_TO_FIRST_ANGLE_GAIN   (1.15f)
 /* 历史“起点稳定帧数”参数；当前按键启动流程不使用，保留但不参与判断。 */
 #define SEQUENCE_START_STABLE_CYCLES   (5U)
 /* 在125±5内且低速时，必须连续满足5个新的视觉位置帧才确认最终保持。 */
@@ -136,7 +140,7 @@
  * 远距离控制：运动时适度放大PID角度；静止时保证管角超过实测静摩擦阈值。
  * 最低角只在球静止时使用，检测到运动后立即恢复速度闭环输出。
  */
-#define POSITION_FAR_ZONE              (7.0f) /* |T-C|大于50进入强驱动区 */
+#define POSITION_FAR_ZONE              (8.0f) /* |T-C|大于50进入强驱动区 */
 #define PIPE_FAR_ANGLE_GAIN            (1.7f) /* 远距离运动中放大速度环角度 */
 #define PIPE_FAR_POSITIVE_MIN_DEG      (2.50f) /* 远距离静止时正方向最低启动角 */
 #define PIPE_FAR_NEGATIVE_MIN_DEG      (2.50f) /* 远距离静止时负方向最低启动角 */
@@ -159,7 +163,7 @@
 /* 位置积分系数：消除长期位置偏差；过大会积分累积并导致明显过冲，通常只使用很小数值。 */
 #define POSITION_KI                    (0.03f)
 /* 位置微分系数：根据误差变化提前减速、增加阻尼；过大会放大位置噪声并造成电机抖动。 */
-#define POSITION_KD                    (0.003f)
+#define POSITION_KD                    (0.002f)
 /* 位置外环最大输出，即 target_speed 的绝对值上限；越大允许7小球移动得越快，也越容易冲过目标。 */
 #define POSITION_MAX_SPEED             (70.0f)
 /* 位置环积分累计上限，用于防止长时间大误差造成积分饱和；不是速度或角度上限。 */
@@ -170,22 +174,22 @@
  * 它决定水管需要倾斜多少来使小球速度跟随位置外环的要求。
  */
 /* 速度比例系数：速度误差对应的即时倾角；增大可提高动作幅度，过大会造成速度震荡。 */
-#define SPEED_KP                       (0.08f)
+#define SPEED_KP                       (0.07f)
 /* 速度积分系数：补偿摩擦、坡度等造成的长期速度不足；过大会持续加大倾角并导致过冲。 */
 #define SPEED_KI                       (0.01f)
 /* 速度微分系数：抑制速度突然变化；速度反馈噪声较大，因此通常只能使用很小数值。 */
 #define SPEED_KD                       (0.01f)
 /* 速度内环最终输出的机械管角上限，单位为度；同时限制正、负两个方向为 ±该数值。 */
-#define PIPE_MAX_ANGLE_DEG             (21.0f)
+#define PIPE_MAX_ANGLE_DEG             (20.0f)
 /*
  * 负管角方向的机构力度补偿：1.0表示不补偿，数值越大，靠近500一侧的回拉幅度越大。
  * 补偿后的角度仍会被 PIPE_MAX_ANGLE_DEG 限制，不会突破机械角度上限。
  */
 #define PIPE_NEGATIVE_ANGLE_GAIN       (1.00f)
 /* 往0方向使用负管角，单独限制该方向的最大幅度，避免下降方向动作过大。 */
-#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (21.0f)
+#define PIPE_NEGATIVE_MAX_ANGLE_DEG    (20.0f)
 /* 靠近目标时分方向限制管角；正方向需要更强制动力，负方向保持原限制。 */
-#define PIPE_NEAR_ZONE                 (22.0f)
+#define PIPE_NEAR_ZONE                 (15.0f)
 #define PIPE_NEAR_POSITIVE_MAX_DEG     (1.8f)
 #define PIPE_NEAR_NEGATIVE_MAX_DEG     (1.7f)
 /*
@@ -975,6 +979,11 @@ static float Vehicle_GetCompensationAngle(void)
         VEHICLE_ACTUAL_ACCEL_BLEND *
         (g_vehicle_fused_accel_mmps2 -
          (float)g_vehicle.target_accel_mmps2);
+    /*
+     * 当前机构只需抵消车辆加速。减速时不向相反方向回调水管，
+     * 而是令目标角为0，由后续斜率限制平缓回到上电水平零点。
+     */
+    /* 正、负加速度都参与补偿：车辆减速时使用反方向管角抵消惯性。 */
     angle = -control_accel * VEHICLE_ANGLE_PER_MMPS2_DEG *
         VEHICLE_ACCEL_ANGLE_GAIN;
     /* 发送端进入BC或DA弯道时会置byte12 bit4，直接按协议响应弯道。 */
@@ -1258,7 +1267,8 @@ static void Ball_CarCompensationOnlyUpdate(void)
 {
     float desired_angle = Vehicle_GetCompensationAngle();
     float change;
-    float slew_limit = VEHICLE_COMP_SLEW_DEG;
+    float slew_limit = ((g_vehicle.flags & VEHICLE_FLAG_CURVE) != 0U)
+        ? VEHICLE_CURVE_SLEW_DEG : VEHICLE_COMP_SLEW_DEG;
 
     target_speed = 0.0f;
     PID_Reset(&g_position_pid);
@@ -1492,6 +1502,10 @@ static void Ball_ControlUpdate(void)
     /* 往0方向使用负管角：降低该方向增益并单独限幅，避免动作幅度过大。 */
     if (desired_pipe_angle < 0.0f) {
         desired_pipe_angle *= PIPE_NEGATIVE_ANGLE_GAIN;
+        if (g_sequence_state == BALL_SEQUENCE_TO_360) {
+            /* 历史状态名TO_360当前对应从起点向130移动的第一阶段。 */
+            desired_pipe_angle *= SEQUENCE_TO_FIRST_ANGLE_GAIN;
+        }
         if (desired_pipe_angle < -PIPE_NEGATIVE_MAX_ANGLE_DEG) {
             desired_pipe_angle = -PIPE_NEGATIVE_MAX_ANGLE_DEG;
         }
